@@ -4,6 +4,8 @@ class Intent(Enum):
     GREETING = "greeting"
     HELP = "help"
     EXIT = "exit"
+    NOTE_CREATE = "note_create"
+    NOTE_READ = "note_read"
     UNKNOWN = "unknown"
 
 def detect_intent(tokens: list[str]) -> Intent:
@@ -18,5 +20,12 @@ def detect_intent(tokens: list[str]) -> Intent:
 
     if any(t in ("exit", "quit", "bye") for t in tokens):
         return Intent.EXIT
+    
+    if "note" in tokens and any(t in ("save", "write", "take") for t in tokens):
+        return Intent.NOTE_CREATE
+
+    if "note" in tokens and any(t in ("read", "show", "list") for t in tokens):
+        return Intent.NOTE_READ
+
 
     return Intent.UNKNOWN

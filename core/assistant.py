@@ -37,12 +37,13 @@ class Assistant:
                     intent = Intent.UNKNOWN
             else:
                 scores = score_intents(tokens)
-                intent = pick_best_intent(scores)
+                intent = pick_best_intent(scores, tokens)
+
 
             # Save user message
             save_message("user", user_text, intent.value)
 
-            response = handle(intent)
+            response = handle(intent, user_text)
             print(f"Rudra > {response}")
 
             # Save assistant response
