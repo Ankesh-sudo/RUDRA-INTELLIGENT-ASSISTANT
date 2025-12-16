@@ -1,12 +1,9 @@
-from core.input.voice_input import VoiceInput
-
-_voice = VoiceInput()
+from loguru import logger
 
 def read_text() -> str:
     try:
-        return _voice.listen_once()
+        text = input("You > ").strip()
+        logger.debug("Text input received: {}", text)
+        return text
     except KeyboardInterrupt:
-        raise
-    except Exception:
-        # fallback to text
-        return input("You > ").strip()
+        return "exit"

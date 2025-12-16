@@ -1,6 +1,6 @@
 from loguru import logger
 from core.storage.mysql import verify_connection
-from core.input.text_input import read_text
+from core.speech.google_engine import GoogleSpeechEngine
 from core.nlp.tokenizer import tokenize
 from core.nlp.intent import Intent
 from core.nlp.normalizer import normalize
@@ -11,6 +11,7 @@ from core.intelligence.intent_scorer import score_intents, pick_best_intent
 
 class Assistant:
     def __init__(self):
+        self.speech = GoogleSpeechEngine()
         self.name = "Rudra"
         self.running = True
         self.ctx = ShortTermContext()
@@ -27,7 +28,7 @@ class Assistant:
         logger.info("Day 4 started. Long-term memory enabled.")
 
         while self.running:
-            user_text = read_text()
+            user_text = self.speech.listen_once()
             user_text = normalize(user_text) 
             tokens = tokenize(user_text)
 
