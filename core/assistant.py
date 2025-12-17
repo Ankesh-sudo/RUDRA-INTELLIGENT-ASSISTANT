@@ -1,6 +1,6 @@
 from loguru import logger
 from core.storage.mysql import verify_connection
-from core.speech.google_engine import GoogleSpeechEngine
+from core.input_controller import InputController
 from core.nlp.tokenizer import tokenize
 from core.nlp.intent import Intent
 from core.nlp.normalizer import normalize
@@ -9,9 +9,10 @@ from core.context.short_term import ShortTermContext
 from core.context.long_term import save_message
 from core.intelligence.intent_scorer import score_intents, pick_best_intent
 
+
 class Assistant:
     def __init__(self):
-        self.speech = GoogleSpeechEngine()
+        self.input = InputController()
         self.name = "Rudra"
         self.running = True
         self.ctx = ShortTermContext()
@@ -25,11 +26,11 @@ class Assistant:
         else:
             logger.error("MySQL connection FAILED: {}", msg)
 
-        logger.info("Day 4 started. Long-term memory enabled.")
+        logger.info("Day 8 started. Input control enabled.")
 
         while self.running:
-            user_text = self.speech.listen_once()
-            user_text = normalize(user_text) 
+            user_text = self.input.read()
+            user_text = normalize(user_text)
             tokens = tokenize(user_text)
 
             # Follow-up handling
@@ -42,20 +43,16 @@ class Assistant:
                 scores = score_intents(tokens)
                 intent = pick_best_intent(scores, tokens)
 
-
-            # Save user message
             save_message("user", user_text, intent.value)
 
             response = handle(intent, user_text)
             print(f"Rudra > {response}")
 
-            # Save assistant response
             save_message("assistant", response, intent.value)
 
-            # Update short-term context
             self.ctx.update(intent.value)
 
             if intent == Intent.EXIT:
                 self.running = False
 
-        logger.info("Day 4 complete.")
+        logger.info("Day 8 complete.")

@@ -8,8 +8,10 @@ class GoogleSpeechEngine:
         self.microphone = sr.Microphone()
 
         # Tune for better results
+        self.recognizer.dynamic_energy_threshold = True
         self.recognizer.energy_threshold = 300
         self.recognizer.pause_threshold = 0.8
+
 
         logger.info("Google Speech Engine initialized")
 
