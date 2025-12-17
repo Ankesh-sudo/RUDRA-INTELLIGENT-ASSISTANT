@@ -1,45 +1,64 @@
-# Rudra – Hybrid Offline Voice Assistant
+# Rudra — Intelligent Voice Assistant
 
-Rudra is an **offline-first, hybrid voice assistant** designed to be fast,
-privacy-respecting, and fully controllable across devices (Linux, Windows,
-Android, Raspberry Pi).
+Rudra is a modular, Python-based intelligent voice assistant designed to work reliably on Linux systems.  
+The project is built step-by-step with a strong focus on **architecture, stability, and extensibility**.
 
-Unlike cloud-locked assistants, Rudra performs **core intelligence locally**
-and uses the cloud only as an enhancement layer.
+Current implementation uses **Google Speech Recognition** for accurate voice input, with future plans for hybrid and offline support.
 
 ---
 
-## Architecture
+## 🚀 Features (Implemented)
 
-**Hybrid model**
-- Local device: input, wake-word, media & system control
-- Cloud (optional): advanced ML, long-term memory, multi-device sync
+### ✅ Core Assistant
+- Intent-based command processing
+- Modular NLP pipeline
+- Short-term & long-term memory
+- MySQL-backed persistent storage
+- Clean separation of concerns
 
-The core intelligence is **language-agnostic** and **offline-capable**.
+### ✅ Input System (Day 8)
+- Voice input using **Google Speech Recognition**
+- Text input fallback
+- **Push-to-talk** (press ENTER to speak)
+- Configurable input mode (voice / text)
+- Controlled listening (no always-on mic)
 
----
-
-## Current Features (Day 1–3)
-
-- Clean modular project structure
-- MySQL-backed storage
-- Text-based command engine (offline)
-- Tokenization and intent scoring
-- Short-term conversational context
-- Extensible skill routing
-
----
-
-### Current Features (Day 6)
-- Offline speech-to-text (Vosk)
-- Offline-first architecture
-- Intent-based command handling
-- Persistent memory using MySQL
-- Voice-controlled notes
-- Accent-tolerant normalization
-- Linux-ready (Laptop & Raspberry Pi)
-
-> Models are not included in the repository.
-> Download instructions will be provided.
+### ✅ Stability & Logging
+- Structured logging with Loguru
+- Graceful handling of speech errors
+- Environment-variable based configuration
+- Safe `.env` usage (not committed)
 
 ---
+
+## 🧠 Project Architecture
+
+core/
+├── assistant.py # Main assistant loop
+├── main.py # Entry point
+├── config.py # Input configuration
+├── input_controller.py # Centralized input handling
+│
+├── speech/
+│ └── google_engine.py # Google Speech Recognition
+│
+├── nlp/
+│ ├── tokenizer.py
+│ ├── normalizer.py
+│ ├── intent.py
+│
+├── intelligence/
+│ └── intent_scorer.py
+│
+├── skills/
+│ └── basic.py
+│
+├── context/
+│ ├── short_term.py
+│ └── long_term.py
+│
+├── storage/
+│ ├── mysql.py
+│ └── models.py
+
+
