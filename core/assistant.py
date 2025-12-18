@@ -30,6 +30,8 @@ class Assistant:
 
         while self.running:
             user_text = self.input.read()
+            if not user_text:
+                continue
             user_text = normalize(user_text)
             tokens = tokenize(user_text)
 
@@ -41,8 +43,16 @@ class Assistant:
                     intent = Intent.UNKNOWN
             else:
                 scores = score_intents(tokens)
-                intent = pick_best_intent(scores, tokens)
+                intent, confidence = pick_best_intent(scores, tokens)
 
+            logger.debug(
+                "Tokens: {} | Scores: {} | Selected: {} ({:.2f})",
+                tokens, scores, intent.value, confidence
+            )
+
+            if not tokens or confidence < 0.35:
+                print("Rudra > Please say that again clearly.")
+                continue
             save_message("user", user_text, intent.value)
 
             response = handle(intent, user_text)

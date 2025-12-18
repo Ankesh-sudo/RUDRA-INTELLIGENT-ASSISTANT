@@ -21,17 +21,10 @@ def score_intents(tokens: List[str]) -> Dict[Intent, int]:
     return scores
 
 def pick_best_intent(scores, tokens):
-    # Explicit priority rules (override scoring)
-    if "read" in tokens or "show" in tokens or "list" in tokens:
-        return Intent.NOTE_READ
+    if not scores:
+        return Intent.UNKNOWN, 0.0
 
-    if "save" in tokens or "write" in tokens or "take" in tokens:
-        return Intent.NOTE_CREATE
+    best_intent = max(scores, key=scores.get)
+    best_score = scores[best_intent]
 
-    # Fallback to scoring
-    best_intent, best_score = Intent.UNKNOWN, 0
-    for intent, score in scores.items():
-        if score > best_score:
-            best_intent, best_score = intent, score
-
-    return best_intent if best_score > 0 else Intent.UNKNOWN
+    return best_intent, best_score
