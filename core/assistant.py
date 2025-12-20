@@ -77,6 +77,7 @@ class Assistant:
             logger.debug("[VALIDATION] {}", validation)
 
             if not validation["valid"]:
+                self.input_validator.mark_rejected()
                 print("Rudra > I didn’t understand. Please repeat.")
                 continue
             # --------------------------------------
@@ -114,6 +115,7 @@ class Assistant:
                 tokens, scores, intent.value, confidence
             )
             if intent == Intent.UNKNOWN:
+                self.input_validator.mark_rejected()
                 print("Rudra > I don’t know how to do that yet.")
                 continue
             # CONFIDENCE GATE
@@ -122,6 +124,7 @@ class Assistant:
                     "Rejected by confidence gate | tokens={} | intent={} | confidence={:.2f}",
                     tokens, intent.value, confidence
                 )
+                self.input_validator.mark_rejected()
                 print("Rudra > Please say that again.")
                 continue
 

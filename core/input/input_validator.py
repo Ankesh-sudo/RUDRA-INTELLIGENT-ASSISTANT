@@ -1,5 +1,3 @@
-
-
 from typing import Dict
 from core.nlp.normalizer import normalize_text
 
@@ -7,15 +5,17 @@ from core.nlp.normalizer import normalize_text
 class InputValidator:
     def __init__(self):
         self._last_input = None
+        self._last_result = None  # "accepted" or "rejected"
 
+    def mark_rejected(self):
+            self._last_result = "rejected"
+            
     def validate(self, raw_text: str) -> Dict[str, str | bool]:
-        """
-        Validate input text before intent processing.
-        """
         clean_text = normalize_text(raw_text)
 
         # Empty after normalization
         if not clean_text:
+            self._last_result = "rejected"
             return {
                 "valid": False,
                 "clean_text": "",
@@ -24,6 +24,7 @@ class InputValidator:
 
         # Too short
         if len(clean_text) < 3:
+            self._last_result = "rejected"
             return {
                 "valid": False,
                 "clean_text": clean_text,
@@ -34,22 +35,28 @@ class InputValidator:
 
         # Too few words
         if len(words) < 2:
+            self._last_result = "rejected"
             return {
                 "valid": False,
                 "clean_text": clean_text,
                 "reason": "too_few_words"
             }
 
-
-        if self._last_input and clean_text in self._last_input:
+        # Repeat suppression ONLY if last input was accepted
+        if (
+            self._last_input
+            and clean_text == self._last_input
+            and self._last_result == "accepted"
+        ):
             return {
                 "valid": False,
                 "clean_text": clean_text,
                 "reason": "repeat"
             }
 
+        # Accept input
         self._last_input = clean_text
-
+        self._last_result = "accepted"
 
         return {
             "valid": True,
