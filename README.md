@@ -132,7 +132,6 @@ source venv/bin/activate
 # Run Rudra
 python3 -m core.main
 
-'''
 
 ---
 Usage:
@@ -145,9 +144,11 @@ Silence is handled automatically
 
 Say exit rudra to quit
 
+```bash
+
 ---
 
-🧭 Roadmap (High Level)
+## 🧭 Roadmap (High Level)
 Day 10–14: System actions (apps, files, OS control)
 
 Day 15–25: Advanced skills & workflows
@@ -160,7 +161,7 @@ Day 61–70: Multi-device sync & Raspberry Pi build
 
 
 ---
-📌 Philosophy
+## 📌 Philosophy
 Rudra is not built to demo quickly —
 it is built to last, scale, and evolve.
 
@@ -176,7 +177,7 @@ Safe to modify later
 
 ---
 
-📜 License
+## 📜 License
 This project is currently for learning, research, and portfolio purposes.
 License will be finalized once the core system stabilizes.
 
