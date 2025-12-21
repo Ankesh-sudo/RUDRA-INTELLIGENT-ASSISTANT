@@ -144,7 +144,7 @@ Silence is handled automatically
 
 Say exit rudra to quit
 
-```bash
+```
 
 ---
 
