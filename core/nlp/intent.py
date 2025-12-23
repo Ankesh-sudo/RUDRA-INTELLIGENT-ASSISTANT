@@ -11,6 +11,7 @@ class Intent(Enum):
     OPEN_FILE_MANAGER = "open_file_manager"
     UNKNOWN = "unknown"
 
+
 def detect_intent(tokens: list[str]) -> Intent:
     if not tokens:
         return Intent.UNKNOWN
@@ -29,6 +30,5 @@ def detect_intent(tokens: list[str]) -> Intent:
 
     if "note" in tokens and any(t in ("read", "show", "list") for t in tokens):
         return Intent.NOTE_READ
-
 
     return Intent.UNKNOWN

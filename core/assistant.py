@@ -5,7 +5,8 @@ from core.storage.mysql import verify_connection
 from core.input_controller import InputController
 from core.nlp.tokenizer import tokenize
 from core.nlp.intent import Intent
-from core.skills.basic import handle
+from core.skills.basic import handle as basic_handle
+from core.skills.system_actions import handle as system_handle
 from core.context.short_term import ShortTermContext
 from core.context.long_term import save_message
 from core.intelligence.intent_scorer import score_intents, pick_best_intent
@@ -41,7 +42,7 @@ class Assistant:
         else:
             logger.error("MySQL connection FAILED: {}", msg)
 
-        logger.info("Day 9.3 started. Active listening enabled.")
+        logger.info("Day 11 started. System actions enabled.")
 
         while self.running:
             raw_text = self.input.read()
@@ -90,7 +91,7 @@ class Assistant:
             scores = {}
             confidence = 0.0
 
-            # FOLLOW-UP HANDLING
+            # -------- FOLLOW-UP HANDLING --------
             if tokens in (["again"], ["repeat"]):
                 if self.ctx.last_intent:
                     intent = Intent(self.ctx.last_intent)
@@ -114,11 +115,13 @@ class Assistant:
                 "Tokens={} | Scores={} | Intent={} | Confidence={:.2f}",
                 tokens, scores, intent.value, confidence
             )
+
             if intent == Intent.UNKNOWN:
                 self.input_validator.mark_rejected()
                 print("Rudra > I don’t know how to do that yet.")
                 continue
-            # CONFIDENCE GATE
+
+            # -------- CONFIDENCE GATE --------
             if intent != Intent.EXIT and confidence < 0.60:
                 logger.debug(
                     "Rejected by confidence gate | tokens={} | intent={} | confidence={:.2f}",
@@ -127,13 +130,22 @@ class Assistant:
                 self.input_validator.mark_rejected()
                 print("Rudra > Please say that again.")
                 continue
+            # ---------------------------------
 
             # Save user message
             save_message("user", clean_text, intent.value)
 
-            # Execute skill
-            response = handle(intent, clean_text)
+            # -------- EXECUTION (DAY 11) --------
+            response = system_handle(intent, clean_text)
+
+            if response is None:
+                response = basic_handle(intent, clean_text)
+
+            if not response:
+                response = "Done."
+
             print(f"Rudra > {response}")
+            # -----------------------------------
 
             # Save assistant message
             save_message("assistant", response, intent.value)

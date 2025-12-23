@@ -1,6 +1,7 @@
 from typing import Dict, List
 from core.nlp.intent import Intent
 
+
 # Keyword evidence per intent
 INTENT_KEYWORDS: Dict[Intent, List[str]] = {
     # Core
@@ -13,17 +14,45 @@ INTENT_KEYWORDS: Dict[Intent, List[str]] = {
     Intent.NOTE_READ: ["read", "show", "list"],
 
     # --------------------
-    # Day 10 – System actions
+    # Day 10 – System actions (extended in Day 11)
     # --------------------
-    Intent.OPEN_BROWSER: ["browser", "chrome", "firefox", "internet"],
-    Intent.OPEN_TERMINAL: ["terminal", "console", "shell"],
-    Intent.OPEN_FILE_MANAGER: ["files", "file", "folder", "directory"],
+    Intent.OPEN_BROWSER: [
+        "browser",
+        "chrome",
+        "firefox",
+        "internet",
+        # Day 11 additions
+        "youtube",
+        "google",
+        "github",
+        "website",
+        "site",
+    ],
+
+    Intent.OPEN_TERMINAL: [
+        "terminal",
+        "console",
+        "shell",
+    ],
+
+    Intent.OPEN_FILE_MANAGER: [
+        "files",
+        "file",
+        "folder",
+        "directory",
+        # Day 11 additions
+        "downloads",
+        "download",
+        "desktop",
+        "documents",
+    ],
 }
 
 
 def score_intents(tokens: List[str]) -> Dict[Intent, int]:
     """
     Score intents based on keyword matches.
+    Deterministic, rule-based (Day 9–11 safe).
     """
     scores: Dict[Intent, int] = {i: 0 for i in Intent}
 

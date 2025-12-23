@@ -6,12 +6,24 @@ class AppRegistry:
     def __init__(self):
         self.executor = SystemExecutor()
         self._actions = {
-            "open_browser": self.executor.open_browser,
-            "open_terminal": self.executor.open_terminal,
-            "open_file_manager": self.executor.open_file_manager,
+            "browser": self.executor.open_browser,
+            "terminal": self.executor.open_terminal,
+            "file_manager": self.executor.open_file_manager,
+            "calculator": lambda: self._run("gnome-calculator"),
+            "vscode": lambda: self._run("code"),
         }
 
-    def execute(self, action: str) -> bool:
-        if action not in self._actions:
+    def _run(self, cmd: str) -> bool:
+        try:
+            import subprocess
+            subprocess.Popen([cmd])
+            return True
+        except Exception as e:
+            logger.error("Failed to run {}: {}", cmd, e)
             return False
-        return bool(self._actions[action]())
+
+    def execute(self, app_name: str) -> bool:
+        action = self._actions.get(app_name)
+        if not action:
+            return False
+        return bool(action())
