@@ -1,89 +1,204 @@
+import webbrowser
 import os
-import re
-from typing import Optional
+import subprocess
+import platform
+import logging
+from typing import Dict, Any
 
-from core.nlp.intent import Intent
-from core.system.app_registry import AppRegistry
-
-_registry = AppRegistry()
-HOME_DIR = os.path.expanduser("~")
+logger = logging.getLogger(__name__)
 
 
-def handle(intent: Intent, raw_text: str) -> Optional[str]:
-    """
-    Day 11 system action dispatcher
-    """
-    text = raw_text.lower().strip()
+class SystemActions:
+    def __init__(self, config=None):
+        self.config = config
+        self.system = platform.system()
+        self.last_action = None
+        self.last_args = None
 
-    if intent == Intent.OPEN_BROWSER:
-        return _open_browser(text)
+    # ---------- BROWSER ----------
 
-    if intent == Intent.OPEN_FILE_MANAGER:
-        return _open_file_manager(text)
+    def open_browser(self, url: str = None, target: str = None) -> Dict[str, Any]:
+        try:
+            if not url:
+                url = "https://google.com"
 
-    if intent == Intent.OPEN_TERMINAL:
-        return _open_terminal()
+            webbrowser.open(url)
 
-    # Not a system action → let basic skills handle it
-    return None
+            self._store_last("open_browser", {"url": url, "target": target})
 
+            return {
+                "success": True,
+                "message": f"Opening {target or url}",
+                "url": url
+            }
 
-# ---------------- BROWSER ----------------
+        except Exception as e:
+            logger.error(e)
+            return {
+                "success": False,
+                "message": "Failed to open browser"
+            }
 
-def _open_browser(text: str) -> str:
-    url = _extract_url(text)
+    # ---------- TERMINAL ----------
 
-    if url:
-        os.system(f"xdg-open {url} >/dev/null 2>&1 &")
-        return f"Opening {url}"
+    def open_terminal(self, command: str = None, target: str = None) -> Dict[str, Any]:
+        try:
+            if self.system == "Linux":
+                if command:
+                    subprocess.Popen(
+                        ["gnome-terminal", "--", "bash", "-c", f"{command}; exec bash"]
+                    )
+                else:
+                    subprocess.Popen(["gnome-terminal"])
 
-    _registry.execute("browser")
-    return "Opening browser"
+            elif self.system == "Windows":
+                subprocess.Popen(["cmd.exe"])
 
+            elif self.system == "Darwin":
+                subprocess.Popen(["open", "-a", "Terminal"])
 
-def _extract_url(text: str) -> Optional[str]:
-    COMMON = {
-        "youtube": "https://www.youtube.com",
-        "google": "https://www.google.com",
-        "github": "https://github.com",
-        "gmail": "https://mail.google.com",
-    }
+            self._store_last("open_terminal", {"command": command})
 
-    for key, url in COMMON.items():
-        if key in text:
-            return url
+            return {
+                "success": True,
+                "message": "Terminal opened",
+                "command": command
+            }
 
-    match = re.search(r"(https?://\S+)", text)
-    if match:
-        return match.group(1)
+        except Exception as e:
+            logger.error(e)
+            return {
+                "success": False,
+                "message": "Failed to open terminal"
+            }
 
-    match = re.search(r"\b([\w\-]+\.(com|org|net|in))\b", text)
-    if match:
-        return "https://" + match.group(1)
+    # ---------- FILE MANAGER ----------
 
-    return None
+    def open_file_manager(self, path: str = None, target: str = None) -> Dict[str, Any]:
+        try:
+            if not path:
+                path = os.path.expanduser("~")
 
+            if self.system == "Linux":
+                subprocess.Popen(["nautilus", path])
+            elif self.system == "Windows":
+                os.startfile(path)
+            elif self.system == "Darwin":
+                subprocess.Popen(["open", path])
 
-# ---------------- FILE MANAGER ----------------
+            self._store_last("open_file_manager", {"path": path})
 
-def _open_file_manager(text: str) -> str:
-    folders = {
-        "downloads": os.path.join(HOME_DIR, "Downloads"),
-        "desktop": os.path.join(HOME_DIR, "Desktop"),
-        "documents": os.path.join(HOME_DIR, "Documents"),
-    }
+            return {
+                "success": True,
+                "message": f"Opening {target or path}",
+                "path": path
+            }
 
-    for key, path in folders.items():
-        if key in text and os.path.exists(path):
-            os.system(f"xdg-open {path} >/dev/null 2>&1 &")
-            return f"Opening {key}"
+        except Exception as e:
+            logger.error(e)
+            return {
+                "success": False,
+                "message": "Failed to open file manager"
+            }
 
-    _registry.execute("file_manager")
-    return "Opening file manager"
+    # ---------- SEARCH ----------
 
+    def search_web(self, query: str = None, target: str = None) -> Dict[str, Any]:
+        try:
+            if not query:
+                return {
+                    "success": False,
+                    "message": "What should I search for?"
+                }
 
-# ---------------- TERMINAL ----------------
+            url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+            webbrowser.open(url)
 
-def _open_terminal() -> str:
-    _registry.execute("terminal")
-    return "Opening terminal"
+            self._store_last("search_web", {"query": query})
+
+            return {
+                "success": True,
+                "message": f"Searching for {query}",
+                "url": url
+            }
+
+        except Exception as e:
+            logger.error(e)
+            return {
+                "success": False,
+                "message": "Search failed"
+            }
+
+    # ---------- FILE OPEN ----------
+
+    def open_file(self, filename: str = None, full_path: str = None, target: str = None) -> Dict[str, Any]:
+        try:
+            path = full_path
+
+            if not path and filename:
+                for base in ["~/Downloads", "~/Desktop", "~/Documents"]:
+                    test = os.path.expanduser(f"{base}/{filename}")
+                    if os.path.exists(test):
+                        path = test
+                        break
+
+            if not path:
+                return {
+                    "success": False,
+                    "message": "File not found"
+                }
+
+            if self.system == "Linux":
+                subprocess.Popen(["xdg-open", path])
+            elif self.system == "Windows":
+                os.startfile(path)
+            elif self.system == "Darwin":
+                subprocess.Popen(["open", path])
+
+            self._store_last("open_file", {"path": path})
+
+            return {
+                "success": True,
+                "message": f"Opening {os.path.basename(path)}",
+                "path": path
+            }
+
+        except Exception as e:
+            logger.error(e)
+            return {
+                "success": False,
+                "message": "Failed to open file"
+            }
+
+    # ---------- LIST FILES ----------
+
+    def list_files(self, path: str = None, target: str = None) -> Dict[str, Any]:
+        try:
+            if not path:
+                path = os.getcwd()
+
+            files = os.listdir(path)
+
+            self._store_last("list_files", {"path": path})
+
+            return {
+                "success": True,
+                "message": f"Files in {path}",
+                "files": files
+            }
+
+        except Exception as e:
+            logger.error(e)
+            return {
+                "success": False,
+                "message": "Failed to list files"
+            }
+
+    # ---------- CONTEXT ----------
+
+    def _store_last(self, action: str, args: Dict[str, Any]):
+        self.last_action = action
+        self.last_args = args
+
+    def get_last_action(self):
+        return self.last_action, self.last_args
