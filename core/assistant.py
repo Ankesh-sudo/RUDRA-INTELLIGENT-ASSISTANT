@@ -6,11 +6,13 @@ from core.input_controller import InputController
 from core.nlp.tokenizer import tokenize
 from core.nlp.intent import Intent
 from core.skills.basic import handle as basic_handle
-from core.skills.system_actions import handle as system_handle
 from core.context.short_term import ShortTermContext
 from core.context.long_term import save_message
 from core.intelligence.intent_scorer import score_intents, pick_best_intent
 from core.intelligence.confidence_refiner import refine_confidence
+
+# Day 12
+from core.actions.action_executor import ActionExecutor
 
 
 # Day 9.3 – Listening states
@@ -33,6 +35,9 @@ class Assistant:
         self.state = IDLE
         self.silence_count = 0
 
+        # Day 12 – Action executor (system actions + confidence gating)
+        self.action_executor = ActionExecutor()
+
     def run(self):
         logger.info("Assistant initialized: {}", self.name)
 
@@ -42,7 +47,7 @@ class Assistant:
         else:
             logger.error("MySQL connection FAILED: {}", msg)
 
-        logger.info("Day 11 started. System actions enabled.")
+        logger.info("Day 12 started. Action executor enabled.")
 
         while self.running:
             raw_text = self.input.read()
@@ -62,7 +67,6 @@ class Assistant:
                         self.state = IDLE
                         self.silence_count = 0
                         continue
-
                 continue
             # --------------------------------------------
 
@@ -70,7 +74,7 @@ class Assistant:
             self.silence_count = 0
             self.state = ACTIVE
 
-            # -------- INPUT VALIDATION GATE --------
+            # -------- INPUT VALIDATION --------
             validation = self.input_validator.validate(raw_text)
 
             logger.debug("[INPUT] raw='{}'", raw_text)
@@ -81,7 +85,7 @@ class Assistant:
                 self.input_validator.mark_rejected()
                 print("Rudra > I didn’t understand. Please repeat.")
                 continue
-            # --------------------------------------
+            # ---------------------------------
 
             clean_text = validation["clean_text"]
 
@@ -121,28 +125,31 @@ class Assistant:
                 print("Rudra > I don’t know how to do that yet.")
                 continue
 
-            # -------- CONFIDENCE GATE --------
-            if intent != Intent.EXIT and confidence < 0.60:
-                logger.debug(
-                    "Rejected by confidence gate | tokens={} | intent={} | confidence={:.2f}",
-                    tokens, intent.value, confidence
-                )
-                self.input_validator.mark_rejected()
-                print("Rudra > Please say that again.")
-                continue
-            # ---------------------------------
-
             # Save user message
             save_message("user", clean_text, intent.value)
 
-            # -------- EXECUTION (DAY 11) --------
-            response = system_handle(intent, clean_text)
+            # -------- EXECUTION (DAY 12) --------
+            response = None
 
-            if response is None:
+            # Conversation / control intents
+            if intent in (Intent.GREETING, Intent.HELP):
                 response = basic_handle(intent, clean_text)
 
-            if not response:
-                response = "Done."
+            elif intent == Intent.EXIT:
+                response = "Goodbye!"
+                print(f"Rudra > {response}")
+                save_message("assistant", response, intent.value)
+                self.running = False
+                break
+
+            # System + action intents
+            else:
+                result = self.action_executor.execute(intent, clean_text, confidence)
+
+                if not result.get("success", False):
+                    response = result.get("message", "I couldn't do that.")
+                else:
+                    response = result.get("message", "Done.")
 
             print(f"Rudra > {response}")
             # -----------------------------------
@@ -152,6 +159,3 @@ class Assistant:
 
             # Update short-term context
             self.ctx.update(intent.value)
-
-            if intent == Intent.EXIT:
-                self.running = False
