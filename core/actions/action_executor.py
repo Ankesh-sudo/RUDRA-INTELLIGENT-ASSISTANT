@@ -94,23 +94,37 @@ class ActionExecutor:
             "message": f"Intent not implemented: {intent.value}"
         }
 
-    def _check_confidence(self, intent: Intent, confidence: float, text: str) -> Tuple[bool, str]:
-        basic_intents = {Intent.GREETING, Intent.GOODBYE, Intent.THANKS}
+    def _check_confidence(self, intent: Intent, confidence: float, text: str):
+        """
+        Decide whether an action should be executed based on confidence.
+        Aligned with intent_scorer.py
+        """
+
+        # Basic intents that always execute
+        basic_intents = {
+            Intent.GREETING,
+            Intent.HELP,
+            Intent.EXIT,
+        }
+
         if intent in basic_intents:
             return True, "basic intent"
 
+        # Low confidence block
         if confidence < self.min_confidence:
             return False, "low confidence"
 
+        # Ambiguous references
         ambiguous = ["it", "that", "there", "the thing"]
-        if any(w in text.lower() for w in ambiguous) and confidence < 0.6:
+        if any(word in text.lower() for word in ambiguous) and confidence < 0.6:
             return False, "ambiguous command"
 
-        dangerous = {Intent.OPEN_TERMINAL}
-        if intent in dangerous and confidence < self.high_confidence:
+        # Dangerous actions (terminal)
+        if intent == Intent.OPEN_TERMINAL and confidence < self.high_confidence:
             return False, "dangerous action"
 
         return True, "ok"
+
 
     def _rejection_message(self, reason: str, confidence: float) -> str:
         if reason == "low confidence":
