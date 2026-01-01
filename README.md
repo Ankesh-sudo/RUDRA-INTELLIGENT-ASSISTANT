@@ -11,55 +11,55 @@ Current Stable Milestone: ✅ Day 12 — Argument Extraction & Safe System Contr
 
 Day 12 completes Rudra’s action execution pipeline, making system commands contextual, validated, and confidence-gated.
 
-✔ Argument extraction for system commands
-✔ Intent → Argument → Action flow
-✔ Confidence-based execution gating
-✔ Safe rejection of ambiguous commands
-✔ MySQL persistence restored & verified
-✔ .env loading hardened for production
+- [x] Argument extraction for system commands
+- [x] Intent → Argument → Action flow
+- [x] Confidence-based execution gating
+- [x] Safe rejection of ambiguous commands
+- [x] MySQL persistence restored & verified
+- [x] .env loading hardened for production
 
 🔒 Day 12 is complete, tested, and locked.
 
 ## 🚀 Features (Implemented)
 ### ✅ Core Assistant
 
-Enum-driven intent-based command processing
+- Enum-driven intent-based command processing
 
-Modular NLP pipeline (no hardcoded logic)
+- Modular NLP pipeline (no hardcoded logic)
 
-Short-term & long-term conversational memory
+- Short-term & long-term conversational memory
 
-MySQL-backed persistent storage
+- MySQL-backed persistent storage
 
-Clean separation of concerns
+- Clean separation of concerns
 
-Predictable, debuggable execution flow
+- Predictable, debuggable execution flow
 
 ### ✅ Input System (Day 8)
 
-Voice input using Google Speech Recognition
+- Voice input using Google Speech Recognition
 
-Text input fallback
+- Text input fallback
 
-Push-to-talk (press ENTER to speak)
+- Push-to-talk (press ENTER to speak)
 
-Configurable input mode (voice / text)
+- Configurable input mode (voice / text)
 
-Controlled listening (no always-on microphone)
+- Controlled listening (no always-on microphone)
 
 ### ✅ Input Intelligence (Day 9)
 
-Input normalization & validation gate
+- Input normalization & validation gate
 
-Minimum-length and word-count filtering
+- Minimum-length and word-count filtering
 
-Repeat suppression (only for previously accepted inputs)
+- Repeat suppression (only for previously accepted inputs)
 
-Confidence refinement after intent scoring
+- Confidence refinement after intent scoring
 
-Safe handling of unknown intents
+- Safe handling of unknown intents
 
-Clear retry prompts (no infinite loops)
+- Clear retry prompts (no infinite loops)
 
 ### ✅ Active Listening & Silence Handling (Day 9)
 
@@ -79,41 +79,41 @@ Natural conversational pacing
 
 ### ✅ System Actions (Day 10)
 
-Enum-driven Intent → Action abstraction
+- Enum-driven Intent → Action abstraction
 
-Centralized system execution layer
+- Centralized system execution layer
 
-Linux-safe application launching
+- Linux-safe application launching
 
-Terminal launch hardened (Snap / GLIBC safe)
+- Terminal launch hardened (Snap / GLIBC safe)
 
-No direct OS access from NLP or skills
+- No direct OS access from NLP or skills
 
-Strict OS boundary enforcement
+- Strict OS boundary enforcement
 
 ### ✅ Argument Extraction & Action Gating (Day 12)
 
 Context-aware argument extraction:
 
-URLs
+- URLs
 
-File paths
+- File paths
 
-Directories
+- Directories
 
-Search queries
+- Search queries
 
-Validation before execution
+- Validation before execution
 
-Confidence-based execution gate:
+- Confidence-based execution gate:
 
-High confidence → execute
+- High confidence → execute
 
-Ambiguous → reject safely
+- Ambiguous → reject safely
 
-Low confidence → request rephrase
+- Low confidence → request rephrase
 
-Deterministic behavior (no guessing)
+- Deterministic behavior (no guessing)
 
 ### ✅ Stability, Persistence & Logging
 
@@ -121,21 +121,21 @@ Structured logging using Loguru
 
 Detailed debug traces for:
 
-Input validation
+- Input validation
 
-Intent scoring
+- Intent scoring
 
-Confidence decisions
+- Confidence decisions
 
-Argument extraction
+- Argument extraction
 
-Action execution
+- Action execution
 
-Graceful handling of speech, microphone, and OS errors
+- Graceful handling of speech, microphone, and OS errors
 
-Secure .env usage (never committed)
+- Secure .env usage (never committed)
 
-Explicit .env loading for production reliability
+- Explicit .env loading for production reliability
 
 ## 🧠 Project Architecture
 core/
@@ -176,17 +176,17 @@ core/
 
 ## 🛠️ Tech Stack
 
-Language: Python 3.10+
+- Language: Python 3.10+
 
-Speech Engine: Google Speech Recognition
+- Speech Engine: Google Speech Recognition
 
-Database: MySQL
+- Database: MySQL
 
-ORM: SQLAlchemy
+- ORM: SQLAlchemy
 
-Logging: Loguru
+- Logging: Loguru
 
-OS Target: Linux (Ubuntu tested)
+- OS Target: Linux (Ubuntu tested)
 
 ## ▶️ Running the Assistant
 ### Activate virtual environment
@@ -228,15 +228,15 @@ it is built to last, scale, and evolve.
 
 Every feature must be:
 
-Predictable
+- Predictable
 
-Debuggable
+- Debuggable
 
-Extendable
+- Extendable
 
-Safe to modify later
+- Safe to modify later
 
-No shortcuts. No magic. No fragile abstractions.
+- No shortcuts. No magic. No fragile abstractions.
 
 ## 📜 License
 
