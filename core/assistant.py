@@ -35,8 +35,13 @@ class Assistant:
         self.state = IDLE
         self.silence_count = 0
 
-        # Day 12 – Action executor (system actions + confidence gating)
+        # Day 12 – Action executor
         self.action_executor = ActionExecutor()
+
+        # =================================================
+        # Day 13.3 — minimal follow-up hint (SAFE)
+        # =================================================
+        self.expecting_followup = False
 
     def run(self):
         logger.info("Assistant initialized: {}", self.name)
@@ -47,7 +52,7 @@ class Assistant:
         else:
             logger.error("MySQL connection FAILED: {}", msg)
 
-        logger.info("Day 12 started. Action executor enabled.")
+        logger.info("Day 13.3 started. Follow-up hint enabled.")
 
         while self.running:
             raw_text = self.input.read()
@@ -95,7 +100,7 @@ class Assistant:
             scores = {}
             confidence = 0.0
 
-            # -------- FOLLOW-UP HANDLING --------
+            # -------- INTENT DETECTION --------
             if tokens in (["again"], ["repeat"]):
                 if self.ctx.last_intent:
                     intent = Intent(self.ctx.last_intent)
@@ -107,13 +112,18 @@ class Assistant:
                 scores = score_intents(tokens)
                 intent, confidence = pick_best_intent(scores, tokens)
 
-                # Day 9.2 – Confidence refinement
                 confidence = refine_confidence(
                     confidence,
                     tokens,
                     intent.value,
                     self.ctx.last_intent
                 )
+
+            # =================================================
+            # Day 13.3 — FOLLOW-UP CONFIDENCE HINT (SAFE)
+            # =================================================
+            if self.expecting_followup and len(clean_text.split()) <= 3:
+                confidence = min(1.0, confidence * 1.15)
 
             logger.debug(
                 "Tokens={} | Scores={} | Intent={} | Confidence={:.2f}",
@@ -123,15 +133,15 @@ class Assistant:
             if intent == Intent.UNKNOWN:
                 self.input_validator.mark_rejected()
                 print("Rudra > I don’t know how to do that yet.")
+                self.expecting_followup = False
                 continue
 
-            # Save user message
             save_message("user", clean_text, intent.value)
 
-            # -------- EXECUTION (DAY 12) --------
+            # -------- EXECUTION --------
             response = None
+            result = None
 
-            # Conversation / control intents
             if intent in (Intent.GREETING, Intent.HELP):
                 response = basic_handle(intent, clean_text)
 
@@ -142,7 +152,6 @@ class Assistant:
                 self.running = False
                 break
 
-            # System + action intents
             else:
                 result = self.action_executor.execute(intent, clean_text, confidence)
 
@@ -152,10 +161,14 @@ class Assistant:
                     response = result.get("message", "Done.")
 
             print(f"Rudra > {response}")
-            # -----------------------------------
 
-            # Save assistant message
             save_message("assistant", response, intent.value)
-
-            # Update short-term context
             self.ctx.update(intent.value)
+
+            # =================================================
+            # Day 13.3 — update follow-up expectation
+            # =================================================
+            if result and result.get("executed", False) and result.get("success", False):
+                self.expecting_followup = len(clean_text.split()) <= 4
+            else:
+                self.expecting_followup = False
