@@ -3,7 +3,10 @@ from loguru import logger
 from core.input.input_validator import InputValidator
 from core.storage.mysql import verify_connection
 from core.input_controller import InputController
-from core.nlp.tokenizer import tokenize
+
+# 🔽 Day 14.2 — Normalizer replaces tokenizer
+from core.nlp.normalizer import normalize_text
+
 from core.nlp.intent import Intent
 from core.skills.basic import handle as basic_handle
 from core.context.short_term import ShortTermContext
@@ -38,7 +41,7 @@ class Assistant:
         # Day 12 – Action executor
         self.action_executor = ActionExecutor()
 
-        # Day 13.3 – follow-up hint (kept, but safe)
+        # Day 13.3 – follow-up hint (safe)
         self.expecting_followup = False
 
     def run(self):
@@ -50,7 +53,7 @@ class Assistant:
         else:
             logger.error("MySQL connection FAILED: {}", msg)
 
-        logger.info("Day 14.1 started — UNKNOWN intent execution blocked")
+        logger.info("Day 14.2 started — Phrase normalization enabled")
 
         while self.running:
             raw_text = self.input.read()
@@ -92,8 +95,11 @@ class Assistant:
 
             clean_text = validation["clean_text"]
 
-            # -------- TOKENIZATION --------
-            tokens = tokenize(clean_text)
+            # =================================================
+            # 🔽 Day 14.2 — PHRASE NORMALIZATION (NEW)
+            # =================================================
+            tokens = normalize_text(clean_text)
+            # =================================================
 
             scores = {}
             confidence = 0.0
@@ -115,13 +121,13 @@ class Assistant:
             )
 
             # =================================================
-            # 🔒 Day 14.1 — HARD SAFETY BLOCK (CRITICAL)
+            # 🔒 Day 14.1 — HARD SAFETY BLOCK (STILL ACTIVE)
             # =================================================
             if intent == Intent.UNKNOWN:
                 percent = int(confidence * 100)
                 print(f"Rudra > I'm not confident enough ({percent}%). Please rephrase.")
                 logger.warning(
-                    "[DAY 14.1 BLOCK] UNKNOWN intent blocked | tokens={} | confidence={:.2f}",
+                    "[DAY 14 BLOCK] UNKNOWN intent blocked | tokens={} | confidence={:.2f}",
                     tokens, confidence
                 )
                 self.expecting_followup = False

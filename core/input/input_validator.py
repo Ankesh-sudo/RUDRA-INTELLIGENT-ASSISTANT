@@ -1,5 +1,4 @@
 from typing import Dict
-from core.nlp.normalizer import normalize_text
 
 
 class InputValidator:
@@ -8,12 +7,20 @@ class InputValidator:
         self._last_result = None  # "accepted" or "rejected"
 
     def mark_rejected(self):
-            self._last_result = "rejected"
-            
-    def validate(self, raw_text: str) -> Dict[str, str | bool]:
-        clean_text = normalize_text(raw_text)
+        self._last_result = "rejected"
 
-        # Empty after normalization
+    def validate(self, raw_text: str) -> Dict[str, str | bool]:
+        if not raw_text:
+            self._last_result = "rejected"
+            return {
+                "valid": False,
+                "clean_text": "",
+                "reason": "empty"
+            }
+
+        # Basic string cleanup ONLY (no NLP here)
+        clean_text = raw_text.strip().lower()
+
         if not clean_text:
             self._last_result = "rejected"
             return {
@@ -22,7 +29,7 @@ class InputValidator:
                 "reason": "empty"
             }
 
-        # Too short
+        # Too short (characters)
         if len(clean_text) < 3:
             self._last_result = "rejected"
             return {
@@ -34,7 +41,7 @@ class InputValidator:
         words = clean_text.split()
 
         # Too few words
-        if len(words) < 2:
+        if len(words) < 1:
             self._last_result = "rejected"
             return {
                 "valid": False,
