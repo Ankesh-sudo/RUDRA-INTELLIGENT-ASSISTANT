@@ -1,12 +1,15 @@
 """
 Action Executor with Confidence Gating
+Day 13.2 — SAFE Follow-up Support (Additive)
 """
 
 import logging
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
+
 from core.nlp.intent import Intent
 from core.nlp.argument_extractor import ArgumentExtractor
 from core.skills.system_actions import SystemActions
+from core.context.follow_up import FollowUpContext
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +20,27 @@ class ActionExecutor:
         self.argument_extractor = ArgumentExtractor(config)
         self.system_actions = SystemActions(config)
 
+        # Day 13.2 (SAFE, additive)
+        self.follow_up_context = FollowUpContext()
+
         self.min_confidence = 0.3
         self.high_confidence = 0.7
 
         self.action_history = []
 
+    # =====================================================
+    # PUBLIC ENTRY
+    # =====================================================
     def execute(self, intent: Intent, text: str, confidence: float) -> Dict[str, Any]:
         logger.info(f"Intent={intent.value} confidence={confidence:.2f}")
 
+        # ---------- DAY 13.2 FOLLOW-UP (SAFE) ----------
+        followup = self._try_follow_up(text, confidence)
+        if followup:
+            return followup
+        # ----------------------------------------------
+
+        # ---------- DAY 12 FLOW (UNCHANGED) ----------
         allowed, reason = self._check_confidence(intent, confidence, text)
         if not allowed:
             return {
@@ -46,6 +62,12 @@ class ActionExecutor:
             }
 
         result = self._execute_intent(intent, args)
+
+        # Store successful actions for follow-up
+        if result.get("success", False):
+            action_name = self._intent_to_action_name(intent)
+            self.follow_up_context.add_context(action_name, result, text)
+
         self._log(intent, text, confidence, result)
 
         return {
@@ -56,6 +78,128 @@ class ActionExecutor:
             "result": result
         }
 
+    # =====================================================
+    # DAY 13.2 FOLLOW-UP (SAFE)
+    # =====================================================
+    def _try_follow_up(self, text: str, confidence: float) -> Optional[Dict[str, Any]]:
+        text_lower = text.lower()
+
+        # Hard filter: avoids interfering with normal commands
+        follow_words = ["it", "that", "there", "again", "same"]
+        if not any(w in text_lower for w in follow_words):
+            return None
+
+        context, ref_type = self.follow_up_context.resolve_reference(text)
+        if not context:
+            return None
+
+        original_action = context["action"]
+        entities = context["entities"]
+
+        safe_action = self._map_safe_followup_action(original_action, text_lower)
+        if not safe_action:
+            return None
+
+        args = self._build_followup_args(entities)
+
+        try:
+            result = self._execute_followup_action(safe_action, args)
+
+            if result.get("success", False):
+                self.follow_up_context.add_context(safe_action, result, text)
+
+            self._log_followup(text, confidence, result)
+
+            return {
+                "success": result.get("success", False),
+                "message": result.get("message", ""),
+                "confidence": min(1.0, confidence * 1.1),
+                "executed": True,
+                "result": result,
+                "is_followup": True
+            }
+
+        except Exception as e:
+            logger.error(f"Follow-up failed safely: {e}")
+            return None
+
+    def _map_safe_followup_action(self, original_action: str, text: str) -> Optional[str]:
+        allowed = {
+            "open_browser",
+            "open_terminal",
+            "open_file_manager",
+            "open_file",
+            "search_web",
+            "list_files",
+        }
+
+        if original_action not in allowed:
+            return None
+
+        if "search" in text and original_action == "open_browser":
+            return "search_web"
+
+        return original_action
+
+    def _build_followup_args(self, entities: Dict[str, Any]) -> Dict[str, Any]:
+        args = {}
+
+        if "url" in entities:
+            args["url"] = entities["url"]
+            args["target"] = entities.get("target", "previous")
+
+        if "path" in entities:
+            args["path"] = entities["path"]
+            args["target"] = entities.get("target", "previous")
+
+        if "query" in entities:
+            args["query"] = entities["query"]
+            args["target"] = "previous_search"
+
+        return args
+
+    def _execute_followup_action(self, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        CRITICAL FIX:
+        Uses ONLY existing Day 12 SystemActions methods
+        """
+        if action == "open_browser":
+            return self.system_actions.open_browser(
+                url=args.get("url"), target=args.get("target")
+            )
+
+        if action == "search_web":
+            return self.system_actions.search_web(
+                query=args.get("query"), target=args.get("target")
+            )
+
+        if action == "open_file_manager":
+            return self.system_actions.open_file_manager(
+                path=args.get("path"), target=args.get("target")
+            )
+
+        if action == "open_terminal":
+            return self.system_actions.open_terminal(
+                command=args.get("command"), target=args.get("target")
+            )
+
+        if action == "open_file":
+            return self.system_actions.open_file(
+                filename=args.get("filename"),
+                full_path=args.get("full_path"),
+                target=args.get("target")
+            )
+
+        if action == "list_files":
+            return self.system_actions.list_files(
+                path=args.get("path"), target=args.get("target")
+            )
+
+        return {"success": False, "message": f"Unsupported follow-up action: {action}"}
+
+    # =====================================================
+    # DAY 12 CODE (UNCHANGED)
+    # =====================================================
     def _execute_intent(self, intent: Intent, args: Dict[str, Any]) -> Dict[str, Any]:
         if intent == Intent.OPEN_BROWSER:
             return self.system_actions.open_browser(
@@ -89,42 +233,24 @@ class ActionExecutor:
                 path=args.get("path"), target=args.get("target")
             )
 
-        return {
-            "success": False,
-            "message": f"Intent not implemented: {intent.value}"
-        }
+        return {"success": False, "message": f"Intent not implemented: {intent.value}"}
 
     def _check_confidence(self, intent: Intent, confidence: float, text: str):
-        """
-        Decide whether an action should be executed based on confidence.
-        Aligned with intent_scorer.py
-        """
-
-        # Basic intents that always execute
-        basic_intents = {
-            Intent.GREETING,
-            Intent.HELP,
-            Intent.EXIT,
-        }
+        basic_intents = {Intent.GREETING, Intent.HELP, Intent.EXIT}
 
         if intent in basic_intents:
             return True, "basic intent"
 
-        # Low confidence block
         if confidence < self.min_confidence:
             return False, "low confidence"
 
-        # Ambiguous references
-        ambiguous = ["it", "that", "there", "the thing"]
-        if any(word in text.lower() for word in ambiguous) and confidence < 0.6:
+        if any(w in text.lower() for w in ["it", "that", "there"]) and confidence < 0.6:
             return False, "ambiguous command"
 
-        # Dangerous actions (terminal)
         if intent == Intent.OPEN_TERMINAL and confidence < self.high_confidence:
             return False, "dangerous action"
 
         return True, "ok"
-
 
     def _rejection_message(self, reason: str, confidence: float) -> str:
         if reason == "low confidence":
@@ -135,12 +261,32 @@ class ActionExecutor:
             return "I need to be more certain before doing that."
         return "I can't perform that action."
 
+    def _intent_to_action_name(self, intent: Intent) -> str:
+        return {
+            Intent.OPEN_BROWSER: "open_browser",
+            Intent.OPEN_TERMINAL: "open_terminal",
+            Intent.OPEN_FILE_MANAGER: "open_file_manager",
+            Intent.OPEN_FILE: "open_file",
+            Intent.SEARCH_WEB: "search_web",
+            Intent.LIST_FILES: "list_files",
+        }.get(intent, "unknown")
+
     def _log(self, intent: Intent, text: str, confidence: float, result: Dict[str, Any]):
         self.action_history.append({
             "intent": intent.value,
             "text": text,
             "confidence": confidence,
-            "success": result.get("success", False)
+            "success": result.get("success", False),
+        })
+        if len(self.action_history) > 20:
+            self.action_history.pop(0)
+
+    def _log_followup(self, text: str, confidence: float, result: Dict[str, Any]):
+        self.action_history.append({
+            "intent": "followup",
+            "text": text,
+            "confidence": confidence,
+            "success": result.get("success", False),
         })
         if len(self.action_history) > 20:
             self.action_history.pop(0)
