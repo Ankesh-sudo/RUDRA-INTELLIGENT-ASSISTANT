@@ -1,6 +1,6 @@
 """
 Action Executor with Confidence Gating
-Day 15 — Intent Isolation, Safe Replay, API-Compatible
+Day 15.1 — Intent Isolation + Safe Replay (STABLE)
 """
 
 import logging
@@ -14,9 +14,9 @@ from core.context.follow_up import FollowUpContext
 logger = logging.getLogger(__name__)
 
 
-# -------------------------------
-# Day 15 — Intent classification
-# -------------------------------
+# -------------------------------------------------
+# Day 15 — Intent safety classification
+# -------------------------------------------------
 DANGEROUS_INTENTS = {
     Intent.OPEN_TERMINAL,
 }
@@ -25,8 +25,8 @@ INTENT_CLASS = {
     Intent.OPEN_BROWSER: "system",
     Intent.SEARCH_WEB: "system",
     Intent.OPEN_FILE_MANAGER: "filesystem",
-    Intent.OPEN_FILE: "filesystem",
     Intent.LIST_FILES: "filesystem",
+    Intent.OPEN_FILE: "filesystem",
     Intent.OPEN_TERMINAL: "dangerous",
 }
 
@@ -37,7 +37,7 @@ class ActionExecutor:
         self.argument_extractor = ArgumentExtractor(config)
         self.system_actions = SystemActions(config)
 
-        # Existing follow-up memory (UNCHANGED)
+        # Day 15.1 — intent-isolated follow-up memory
         self.follow_up_context = FollowUpContext()
 
         self.min_confidence = 0.3
@@ -53,23 +53,29 @@ class ActionExecutor:
         intent: Intent,
         text: str,
         confidence: float,
-        replay_args: Dict[str, Any] | None = None,
+        replay_args: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        logger.info(f"Intent={intent.value} confidence={confidence:.2f}")
 
-        # ---------- REPLAY PATH (Day 15) ----------
-        if replay_args:
-            logger.info("[DAY 15] Using replay arguments")
+        logger.info("Intent=%s confidence=%.2f", intent.value, confidence)
+
+        # -------------------------------------------------
+        # REPLAY PATH (explicit replay args)
+        # -------------------------------------------------
+        if replay_args is not None:
             args = replay_args
 
         else:
-            # ---------- FOLLOW-UP PATH ----------
+            # -------------------------------------------------
+            # FOLLOW-UP PATH (pronouns / again / it)
+            # -------------------------------------------------
             followup = self._try_follow_up(text, confidence)
             if followup:
                 return followup
 
-            # ---------- CONFIDENCE CHECK ----------
-            allowed, reason = self._check_confidence(intent, confidence, text)
+            # -------------------------------------------------
+            # CONFIDENCE GATING
+            # -------------------------------------------------
+            allowed, reason = self._check_confidence(intent, confidence)
             if not allowed:
                 return {
                     "success": False,
@@ -79,14 +85,12 @@ class ActionExecutor:
                     "reason": reason,
                 }
 
-            # ---------- ARGUMENT EXTRACTION ----------
-            args = self.argument_extractor.extract_for_intent(
-                text, intent.value
-            )
+            # -------------------------------------------------
+            # ARGUMENT EXTRACTION
+            # -------------------------------------------------
+            args = self.argument_extractor.extract_for_intent(text, intent.value)
 
-            valid, msg = self.argument_extractor.validate_arguments(
-                args, intent.value
-            )
+            valid, msg = self.argument_extractor.validate_arguments(args, intent.value)
             if not valid:
                 return {
                     "success": False,
@@ -95,19 +99,24 @@ class ActionExecutor:
                     "executed": False,
                 }
 
-        # ---------- EXECUTION ----------
+        # -------------------------------------------------
+        # EXECUTE INTENT
+        # -------------------------------------------------
         result = self._execute_intent(intent, args)
 
-        # ---------- STORE CONTEXT (API-SAFE) ----------
+        # -------------------------------------------------
+        # STORE CONTEXT (INTENT-ISOLATED)
+        # -------------------------------------------------
         if result.get("success", False):
             self.follow_up_context.add_context(
-                intent.value,
-                {
+                action=intent.value,
+                result={
+                    "success": True,
                     "entities": args,
                     "intent_class": INTENT_CLASS.get(intent),
                     "danger": intent in DANGEROUS_INTENTS,
                 },
-                text,  # ← positional (FIXED)
+                user_input=text,
             )
 
         self._log(intent, text, confidence, result)
@@ -122,12 +131,12 @@ class ActionExecutor:
         }
 
     # =====================================================
-    # FOLLOW-UP HANDLING (SAFE)
+    # FOLLOW-UP HANDLING (SAFE & ISOLATED)
     # =====================================================
     def _try_follow_up(self, text: str, confidence: float) -> Optional[Dict[str, Any]]:
         text_lower = text.lower()
 
-        if not any(w in text_lower for w in ["it", "that", "there", "again", "same"]):
+        if not any(w in text_lower for w in ("it", "that", "there", "again", "same")):
             return None
 
         context, _ = self.follow_up_context.resolve_reference(text)
@@ -135,7 +144,7 @@ class ActionExecutor:
             return None
 
         if context.get("danger"):
-            logger.warning("[DAY 15 BLOCK] Dangerous intent replay blocked")
+            logger.warning("[DAY 15.1 BLOCK] Dangerous intent replay blocked")
             return {
                 "success": False,
                 "message": "I won’t repeat that action for safety.",
@@ -143,16 +152,21 @@ class ActionExecutor:
                 "executed": False,
             }
 
-        intent_name = context["action"]
-        args = context["entities"]
+        action = context["action"]
+        args = context.get("entities", {})
 
-        result = self._execute_followup_action(intent_name, args)
+        result = self._execute_followup_action(action, args)
 
         if result.get("success", False):
             self.follow_up_context.add_context(
-                intent_name,
-                context,
-                text,  # ← positional (FIXED)
+                action=action,
+                result={
+                    "success": True,
+                    "entities": args,
+                    "intent_class": context.get("intent_class"),
+                    "danger": False,
+                },
+                user_input=text,
             )
 
         return {
@@ -166,7 +180,7 @@ class ActionExecutor:
         }
 
     # =====================================================
-    # FOLLOW-UP EXECUTION
+    # FOLLOW-UP EXECUTION (STRICT)
     # =====================================================
     def _execute_followup_action(self, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
         if action == "open_browser":
@@ -184,11 +198,6 @@ class ActionExecutor:
                 path=args.get("path"), target=args.get("target")
             )
 
-        if action == "open_terminal":
-            return self.system_actions.open_terminal(
-                command=args.get("command"), target=args.get("target")
-            )
-
         if action == "open_file":
             return self.system_actions.open_file(
                 filename=args.get("filename"),
@@ -201,10 +210,15 @@ class ActionExecutor:
                 path=args.get("path"), target=args.get("target")
             )
 
+        if action == "open_terminal":
+            return self.system_actions.open_terminal(
+                command=args.get("command"), target=args.get("target")
+            )
+
         return {"success": False, "message": f"Unsupported follow-up action: {action}"}
 
     # =====================================================
-    # CORE EXECUTION
+    # CORE EXECUTION (DAY 12)
     # =====================================================
     def _execute_intent(self, intent: Intent, args: Dict[str, Any]) -> Dict[str, Any]:
         if intent == Intent.OPEN_BROWSER:
@@ -212,9 +226,9 @@ class ActionExecutor:
                 url=args.get("url"), target=args.get("target")
             )
 
-        if intent == Intent.OPEN_TERMINAL:
-            return self.system_actions.open_terminal(
-                command=args.get("command"), target=args.get("target")
+        if intent == Intent.SEARCH_WEB:
+            return self.system_actions.search_web(
+                query=args.get("query"), target=args.get("target")
             )
 
         if intent == Intent.OPEN_FILE_MANAGER:
@@ -222,9 +236,9 @@ class ActionExecutor:
                 path=args.get("path"), target=args.get("target")
             )
 
-        if intent == Intent.SEARCH_WEB:
-            return self.system_actions.search_web(
-                query=args.get("query"), target=args.get("target")
+        if intent == Intent.LIST_FILES:
+            return self.system_actions.list_files(
+                path=args.get("path"), target=args.get("target")
             )
 
         if intent == Intent.OPEN_FILE:
@@ -234,17 +248,17 @@ class ActionExecutor:
                 target=args.get("target"),
             )
 
-        if intent == Intent.LIST_FILES:
-            return self.system_actions.list_files(
-                path=args.get("path"), target=args.get("target")
+        if intent == Intent.OPEN_TERMINAL:
+            return self.system_actions.open_terminal(
+                command=args.get("command"), target=args.get("target")
             )
 
         return {"success": False, "message": f"Intent not implemented: {intent.value}"}
 
     # =====================================================
-    # SAFETY + UTILS
+    # SAFETY + LOGGING
     # =====================================================
-    def _check_confidence(self, intent: Intent, confidence: float, text: str):
+    def _check_confidence(self, intent: Intent, confidence: float):
         if confidence < self.min_confidence:
             return False, "low confidence"
 

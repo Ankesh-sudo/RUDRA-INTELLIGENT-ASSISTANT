@@ -1,16 +1,14 @@
 """
-Follow-up Context Manager - SAFE VERSION (Day 13.1)
+Follow-up Context Manager — INTENT ISOLATED (Day 15.1)
 
-Handles contextual references like:
-- "it", "that", "this"
-- "there", "here"
+Fixes:
+✔ Cross-intent argument pollution
+✔ Unsafe replay between unrelated actions
 
-DESIGN GOALS:
-✔ Does NOT break Day 12
-✔ Stores ONLY successful actions
-✔ No OS inference
-✔ No intent override
-✔ Additive & reversible
+Preserves:
+✔ Day 12 execution model
+✔ Day 13–14 follow-up behavior
+✔ Additive, safe, reversible design
 """
 
 import re
@@ -20,7 +18,6 @@ from enum import Enum
 
 
 class ReferenceType(Enum):
-    """Types of contextual references"""
     PRONOUN = "pronoun"
     LOCATION = "location"
     ACTION = "action"
@@ -28,14 +25,22 @@ class ReferenceType(Enum):
     DEMONSTRATIVE = "demonstrative"
 
 
+# ------------------------------------------------------------------
+# INTENT → ALLOWED ENTITY KEYS (STRICT)
+# ------------------------------------------------------------------
+INTENT_ENTITY_WHITELIST: Dict[str, List[str]] = {
+    "open_browser": ["url", "target"],
+    "search_web": ["query", "target"],
+    "open_file_manager": ["path", "target"],
+    "list_files": ["path", "target"],
+    "open_file": ["filename", "full_path", "target"],
+    "open_terminal": ["command", "target"],
+}
+
+
 class FollowUpContext:
     """
-    SAFE Follow-up Context Manager
-
-    Responsibilities:
-    - Store recent successful actions
-    - Resolve simple references ("it", "that", "there")
-    - NEVER interfere with normal execution
+    Intent-isolated follow-up context (Day 15.1)
     """
 
     def __init__(self, max_contexts: int = 10, context_timeout: int = 300):
@@ -43,15 +48,15 @@ class FollowUpContext:
         self.max_contexts = max_contexts
         self.context_timeout = context_timeout
 
-        # SAFE reference detection patterns
         self.reference_patterns = {
             ReferenceType.PRONOUN: re.compile(r"\b(it|that|this)\b", re.IGNORECASE),
             ReferenceType.LOCATION: re.compile(r"\b(there|here)\b", re.IGNORECASE),
             ReferenceType.ACTION: re.compile(r"\b(do|open|search)\s+(it|that)\b", re.IGNORECASE),
-            ReferenceType.OBJECT: re.compile(r"\b(the)\s+(file|folder|browser|terminal)\b", re.IGNORECASE),
+            ReferenceType.OBJECT: re.compile(
+                r"\b(the)\s+(file|folder|browser|terminal)\b", re.IGNORECASE
+            ),
         }
 
-        # SAFE resolution rules (Day 12 compatible only)
         self.resolution_map = {
             "it": ["action", "object"],
             "that": ["action", "object"],
@@ -63,7 +68,7 @@ class FollowUpContext:
         }
 
     # ------------------------------------------------------------------
-    # CONTEXT STORAGE
+    # CONTEXT STORAGE (INTENT-ISOLATED)
     # ------------------------------------------------------------------
 
     def add_context(
@@ -73,17 +78,22 @@ class FollowUpContext:
         user_input: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
-        Store context ONLY if action succeeded
+        Store ONLY successful actions with STRICT intent isolation
         """
         if not result.get("success", False):
             return None
 
+        intent = action
+        raw_entities = result.get("entities", {})
+
+        safe_entities = self._filter_entities_by_intent(intent, raw_entities)
+
         context = {
+            "intent": intent,
             "action": action,
-            "result": result,
+            "entities": safe_entities,
             "user_input": user_input,
             "timestamp": datetime.now(),
-            "entities": self._extract_safe_entities(result),
         }
 
         self.contexts.insert(0, context)
@@ -95,14 +105,10 @@ class FollowUpContext:
         return context
 
     # ------------------------------------------------------------------
-    # CONTEXT RESOLUTION
+    # CONTEXT RESOLUTION (INTENT SAFE)
     # ------------------------------------------------------------------
 
     def resolve_reference(self, text: str) -> Tuple[Optional[Dict[str, Any]], str]:
-        """
-        Resolve references safely.
-        Returns (context, reference_type)
-        """
         self._cleanup_old_contexts()
 
         if not self.contexts:
@@ -110,14 +116,12 @@ class FollowUpContext:
 
         text_lower = text.lower().strip()
 
-        # Explicit phrase resolution
         for ref, allowed_types in self.resolution_map.items():
             if ref in text_lower:
                 for ctx in self.contexts:
                     if self._context_matches_types(ctx, allowed_types):
                         return ctx, ref
 
-        # Pattern-based resolution
         for ref_type, pattern in self.reference_patterns.items():
             if pattern.search(text_lower):
                 return self.contexts[0], ref_type.value
@@ -125,48 +129,29 @@ class FollowUpContext:
         return None, "unresolved"
 
     # ------------------------------------------------------------------
-    # SAFE ENTITY EXTRACTION
+    # ENTITY FILTERING (DAY 15.1 CORE FIX)
     # ------------------------------------------------------------------
 
-    def _extract_safe_entities(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    def _filter_entities_by_intent(
+        self, intent: str, entities: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
-        Extract ONLY entities that Day 12 already produces
+        Strip ALL entities not allowed for this intent
         """
-        entities = {"type": "general"}
-
-        result_data = result.get("result", {}) if isinstance(result, dict) else {}
-
-        if "url" in result_data:
-            entities["type"] = "website"
-            entities["url"] = result_data["url"]
-            entities["target"] = result_data.get("target", "website")
-
-        if "path" in result_data:
-            entities["type"] = "path"
-            entities["path"] = result_data["path"]
-            entities["target"] = result_data.get("target", "path")
-
-        if "query" in result_data:
-            entities["type"] = "search"
-            entities["query"] = result_data["query"]
-
-        return entities
+        allowed_keys = INTENT_ENTITY_WHITELIST.get(intent, [])
+        return {k: v for k, v in entities.items() if k in allowed_keys}
 
     # ------------------------------------------------------------------
-    # MATCHING HELPERS (SAFE)
+    # MATCHING HELPERS
     # ------------------------------------------------------------------
 
     def _context_matches_types(self, context: Dict[str, Any], types: List[str]) -> bool:
-        entity_type = context.get("entities", {}).get("type", "general")
-
-        for t in types:
-            if t == "action":
-                return True
-            if t == "object" and entity_type in ("website", "path"):
-                return True
-            if t == "location" and entity_type in ("website", "path"):
-                return True
-
+        if "action" in types:
+            return True
+        if "object" in types and context.get("entities"):
+            return True
+        if "location" in types and "path" in context.get("entities", {}):
+            return True
         return False
 
     # ------------------------------------------------------------------
@@ -181,7 +166,7 @@ class FollowUpContext:
             if now - ctx["timestamp"] < timedelta(seconds=self.context_timeout)
         ]
 
-    def get_last_action(self) -> Optional[Dict[str, Any]]:
+    def get_last_context(self) -> Optional[Dict[str, Any]]:
         self._cleanup_old_contexts()
         return self.contexts[0] if self.contexts else None
 
