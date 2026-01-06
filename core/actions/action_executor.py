@@ -1,6 +1,6 @@
 """
 Action Executor with Confidence Gating
-Day 15.1 — Intent Isolation + Safe Replay (STABLE)
+Day 15.2 — Reference Confidence Gating + Intent Isolation (STABLE)
 """
 
 import logging
@@ -37,11 +37,14 @@ class ActionExecutor:
         self.argument_extractor = ArgumentExtractor(config)
         self.system_actions = SystemActions(config)
 
-        # Day 15.1 — intent-isolated follow-up memory
+        # Day 15 — intent-isolated follow-up memory
         self.follow_up_context = FollowUpContext()
 
         self.min_confidence = 0.3
         self.high_confidence = 0.7
+
+        # Day 15.2 — reference confidence threshold
+        self.min_reference_confidence = 0.5
 
         self.action_history = []
 
@@ -66,7 +69,7 @@ class ActionExecutor:
 
         else:
             # -------------------------------------------------
-            # FOLLOW-UP PATH (pronouns / again / it)
+            # FOLLOW-UP PATH
             # -------------------------------------------------
             followup = self._try_follow_up(text, confidence)
             if followup:
@@ -131,20 +134,45 @@ class ActionExecutor:
         }
 
     # =====================================================
-    # FOLLOW-UP HANDLING (SAFE & ISOLATED)
+    # FOLLOW-UP HANDLING (DAY 15.2 SAFE)
     # =====================================================
     def _try_follow_up(self, text: str, confidence: float) -> Optional[Dict[str, Any]]:
         text_lower = text.lower()
 
-        if not any(w in text_lower for w in ("it", "that", "there", "again", "same")):
+        reference_words = ("it", "that", "there", "again", "same")
+        if not any(w in text_lower for w in reference_words):
             return None
+
+        # ------------------------------
+        # Day 15.2 — reference confidence gate
+        # ------------------------------
+        if confidence < self.min_reference_confidence:
+            logger.warning(
+                "[DAY 15.2 BLOCK] Reference confidence too low: %.2f", confidence
+            )
+            return {
+                "success": False,
+                "message": "I’m not sure what you want me to repeat. Please be specific.",
+                "confidence": confidence,
+                "executed": False,
+            }
 
         context, _ = self.follow_up_context.resolve_reference(text)
         if not context:
             return None
 
+        # ------------------------------
+        # Day 15.2 — UNKNOWN intent isolation
+        # ------------------------------
+        if context.get("intent_class") is None:
+            logger.warning("[DAY 15.2 BLOCK] UNKNOWN intent reference blocked")
+            return None
+
+        # ------------------------------
+        # Dangerous intent isolation
+        # ------------------------------
         if context.get("danger"):
-            logger.warning("[DAY 15.1 BLOCK] Dangerous intent replay blocked")
+            logger.warning("[DAY 15 BLOCK] Dangerous intent replay blocked")
             return {
                 "success": False,
                 "message": "I won’t repeat that action for safety.",
