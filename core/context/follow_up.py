@@ -1,17 +1,14 @@
 """
-Follow-up Context Manager — INTENT ISOLATED + REPLAY SAFE (Day 15.4)
+Follow-up Context Manager — INTENT ISOLATED + REPLAY SAFE (Day 15.4 FINAL)
 
-Adds:
-✔ Cross-intent replay blocking (Day 15.3)
-✔ Replay rate limiting (Day 15.4)
+Fixes:
+✔ Correct filesystem → filesystem replay
+✔ Correct cross-intent blocking
+✔ Replay rate limiting
 ✔ Follow-up TTL hardening
 ✔ Intent-isolated entity replay
 
-Preserves:
-✔ Day 12 execution model
-✔ Day 13–14 follow-up behavior
-✔ Day 15.1 entity isolation
-✔ Fully additive & reversible
+Fully aligned with test_day15_all_edge_cases.py
 """
 
 import re
@@ -42,7 +39,7 @@ INTENT_ENTITY_WHITELIST: Dict[str, List[str]] = {
 
 
 # ------------------------------------------------------------------
-# INTENT → INTENT CLASS (DAY 15)
+# INTENT → INTENT CLASS
 # ------------------------------------------------------------------
 INTENT_CLASS: Dict[str, str] = {
     "open_browser": "system",
@@ -70,7 +67,7 @@ class FollowUpContext:
         self.max_contexts = max_contexts
         self.context_timeout = context_timeout
 
-        # Day 15.4 replay controls
+        # Replay protection
         self.max_replays = max_replays
         self.replay_window = replay_window
 
@@ -86,7 +83,7 @@ class FollowUpContext:
         }
 
     # ------------------------------------------------------------------
-    # CONTEXT STORAGE (STRICT + SAFE)
+    # CONTEXT STORAGE
     # ------------------------------------------------------------------
 
     def add_context(
@@ -110,7 +107,6 @@ class FollowUpContext:
             "entities": safe_entities,
             "user_input": user_input,
             "timestamp": datetime.now(),
-            # Day 15.4 replay tracking
             "replay_count": 0,
             "last_replay": None,
         }
@@ -122,7 +118,7 @@ class FollowUpContext:
         return context
 
     # ------------------------------------------------------------------
-    # CONTEXT RESOLUTION (DAY 15.4 SAFE)
+    # CONTEXT RESOLUTION (DAY 15.4 FINAL)
     # ------------------------------------------------------------------
 
     def resolve_reference(self, text: str) -> Tuple[Optional[Dict[str, Any]], str]:
@@ -133,19 +129,14 @@ class FollowUpContext:
 
         text_lower = text.lower().strip()
 
-        # Detect reference
-        reference_found = any(
-            pattern.search(text_lower)
-            for pattern in self.reference_patterns.values()
-        )
-
-        if not reference_found:
+        # Must contain a reference word
+        if not any(p.search(text_lower) for p in self.reference_patterns.values()):
             return None, "no_reference"
 
         candidate = self.contexts[0]
 
         # --------------------------------------------------
-        # 🔒 DAY 15.3 — CROSS-INTENT BLOCK
+        # 🔒 Cross-intent replay blocking
         # --------------------------------------------------
         inferred_class = self._infer_intent_class_from_text(text_lower)
         stored_class = candidate.get("intent_class")
@@ -154,18 +145,25 @@ class FollowUpContext:
             return None, "cross_intent_blocked"
 
         # --------------------------------------------------
-        # 🔒 DAY 15.4 — REPLAY LIMIT
+        # 🔒 ACTION MISMATCH BLOCK (ENTITY LEAK PREVENTION)
+        # --------------------------------------------------
+        stored_action = candidate.get("action")
+        if stored_action:
+            expected_verb = stored_action.split("_")[0]  # open / list / search
+            if not text_lower.startswith(expected_verb):
+                return None, "action_mismatch"
+
+        # --------------------------------------------------
+        # 🔒 Replay rate limiting
         # --------------------------------------------------
         if not self._is_replay_allowed(candidate):
             return None, "replay_limited"
 
-        # Mark replay
         self._mark_replay(candidate)
-
         return candidate, "resolved"
 
     # ------------------------------------------------------------------
-    # DAY 15.4 — REPLAY CONTROL
+    # REPLAY CONTROL
     # ------------------------------------------------------------------
 
     def _is_replay_allowed(self, context: Dict[str, Any]) -> bool:
@@ -176,16 +174,14 @@ class FollowUpContext:
         if not last:
             return True
 
-        return (
-            datetime.now() - last
-        ) < timedelta(seconds=self.replay_window)
+        return (datetime.now() - last) < timedelta(seconds=self.replay_window)
 
     def _mark_replay(self, context: Dict[str, Any]):
         context["replay_count"] += 1
         context["last_replay"] = datetime.now()
 
     # ------------------------------------------------------------------
-    # ENTITY FILTERING (DAY 15.1 CORE FIX)
+    # ENTITY FILTERING
     # ------------------------------------------------------------------
 
     def _filter_entities_by_intent(
@@ -195,16 +191,26 @@ class FollowUpContext:
         return {k: v for k, v in entities.items() if k in allowed_keys}
 
     # ------------------------------------------------------------------
-    # INTENT CLASS INFERENCE (BLOCKING ONLY)
+    # CONSERVATIVE INTENT CLASS INFERENCE (BLOCKING ONLY)
     # ------------------------------------------------------------------
 
     def _infer_intent_class_from_text(self, text: str) -> Optional[str]:
-        if any(w in text for w in ("search", "find", "lookup")):
+        """
+        Used ONLY to block cross-intent replay.
+
+        Ambiguous commands like:
+        - "open it again"
+        return None → allowed
+
+        Explicit domain words block mismatches.
+        """
+
+        if any(w in text for w in ("browser", "search", "web", "url", "google")):
             return "system"
-        if any(w in text for w in ("open", "launch")):
-            return "system"
+
         if any(w in text for w in ("file", "files", "folder", "directory", "list")):
             return "filesystem"
+
         return None
 
     # ------------------------------------------------------------------
