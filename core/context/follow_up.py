@@ -1,14 +1,15 @@
 """
-Follow-up Context Manager — INTENT ISOLATED (Day 15.1)
+Follow-up Context Manager — INTENT ISOLATED (Day 15.3)
 
-Fixes:
-✔ Cross-intent argument pollution
-✔ Unsafe replay between unrelated actions
+Adds:
+✔ Cross-intent replay blocking
+✔ Intent-class verification before replay
 
 Preserves:
 ✔ Day 12 execution model
 ✔ Day 13–14 follow-up behavior
-✔ Additive, safe, reversible design
+✔ Day 15.1 entity isolation
+✔ Fully additive & reversible
 """
 
 import re
@@ -38,9 +39,22 @@ INTENT_ENTITY_WHITELIST: Dict[str, List[str]] = {
 }
 
 
+# ------------------------------------------------------------------
+# INTENT → INTENT CLASS (DAY 15)
+# ------------------------------------------------------------------
+INTENT_CLASS: Dict[str, str] = {
+    "open_browser": "system",
+    "search_web": "system",
+    "open_file_manager": "filesystem",
+    "list_files": "filesystem",
+    "open_file": "filesystem",
+    "open_terminal": "dangerous",
+}
+
+
 class FollowUpContext:
     """
-    Intent-isolated follow-up context (Day 15.1)
+    Intent-isolated follow-up context (Day 15.3)
     """
 
     def __init__(self, max_contexts: int = 10, context_timeout: int = 300):
@@ -49,9 +63,11 @@ class FollowUpContext:
         self.context_timeout = context_timeout
 
         self.reference_patterns = {
-            ReferenceType.PRONOUN: re.compile(r"\b(it|that|this)\b", re.IGNORECASE),
+            ReferenceType.PRONOUN: re.compile(r"\b(it|that|this|them)\b", re.IGNORECASE),
             ReferenceType.LOCATION: re.compile(r"\b(there|here)\b", re.IGNORECASE),
-            ReferenceType.ACTION: re.compile(r"\b(do|open|search)\s+(it|that)\b", re.IGNORECASE),
+            ReferenceType.ACTION: re.compile(
+                r"\b(open|search|list)\s+(it|that|them)\b", re.IGNORECASE
+            ),
             ReferenceType.OBJECT: re.compile(
                 r"\b(the)\s+(file|folder|browser|terminal)\b", re.IGNORECASE
             ),
@@ -61,6 +77,7 @@ class FollowUpContext:
             "it": ["action", "object"],
             "that": ["action", "object"],
             "this": ["action", "object"],
+            "them": ["action", "object"],
             "there": ["location"],
             "here": ["location"],
             "the file": ["object"],
@@ -68,7 +85,7 @@ class FollowUpContext:
         }
 
     # ------------------------------------------------------------------
-    # CONTEXT STORAGE (INTENT-ISOLATED)
+    # CONTEXT STORAGE (INTENT + ENTITY SAFE)
     # ------------------------------------------------------------------
 
     def add_context(
@@ -78,7 +95,7 @@ class FollowUpContext:
         user_input: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
-        Store ONLY successful actions with STRICT intent isolation
+        Store ONLY successful actions with strict intent isolation
         """
         if not result.get("success", False):
             return None
@@ -91,6 +108,7 @@ class FollowUpContext:
         context = {
             "intent": intent,
             "action": action,
+            "intent_class": INTENT_CLASS.get(intent),
             "entities": safe_entities,
             "user_input": user_input,
             "timestamp": datetime.now(),
@@ -105,7 +123,7 @@ class FollowUpContext:
         return context
 
     # ------------------------------------------------------------------
-    # CONTEXT RESOLUTION (INTENT SAFE)
+    # CONTEXT RESOLUTION (DAY 15.3 SAFE)
     # ------------------------------------------------------------------
 
     def resolve_reference(self, text: str) -> Tuple[Optional[Dict[str, Any]], str]:
@@ -116,17 +134,31 @@ class FollowUpContext:
 
         text_lower = text.lower().strip()
 
-        for ref, allowed_types in self.resolution_map.items():
-            if ref in text_lower:
-                for ctx in self.contexts:
-                    if self._context_matches_types(ctx, allowed_types):
-                        return ctx, ref
-
-        for ref_type, pattern in self.reference_patterns.items():
+        # --------------------------------------------------
+        # Detect reference first
+        # --------------------------------------------------
+        reference_found = False
+        for pattern in self.reference_patterns.values():
             if pattern.search(text_lower):
-                return self.contexts[0], ref_type.value
+                reference_found = True
+                break
 
-        return None, "unresolved"
+        if not reference_found:
+            return None, "no_reference"
+
+        # Candidate = most recent context ONLY
+        candidate = self.contexts[0]
+
+        # --------------------------------------------------
+        # 🔒 DAY 15.3 — CROSS-INTENT BLOCK
+        # --------------------------------------------------
+        inferred_class = self._infer_intent_class_from_text(text_lower)
+        stored_class = candidate.get("intent_class")
+
+        if inferred_class and stored_class and inferred_class != stored_class:
+            return None, "cross_intent_blocked"
+
+        return candidate, "resolved"
 
     # ------------------------------------------------------------------
     # ENTITY FILTERING (DAY 15.1 CORE FIX)
@@ -135,11 +167,29 @@ class FollowUpContext:
     def _filter_entities_by_intent(
         self, intent: str, entities: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        Strip ALL entities not allowed for this intent
-        """
         allowed_keys = INTENT_ENTITY_WHITELIST.get(intent, [])
         return {k: v for k, v in entities.items() if k in allowed_keys}
+
+    # ------------------------------------------------------------------
+    # INTENT CLASS INFERENCE (VERY CONSERVATIVE)
+    # ------------------------------------------------------------------
+
+    def _infer_intent_class_from_text(self, text: str) -> Optional[str]:
+        """
+        Used ONLY to block cross-intent replay.
+        Never used to execute actions.
+        """
+
+        if any(w in text for w in ("search", "find", "lookup")):
+            return "system"
+
+        if any(w in text for w in ("open", "launch")):
+            return "system"
+
+        if any(w in text for w in ("file", "files", "folder", "directory", "list")):
+            return "filesystem"
+
+        return None
 
     # ------------------------------------------------------------------
     # MATCHING HELPERS
