@@ -1,11 +1,11 @@
 """
-Action Executor with Confidence Gating
-Day 15.6 — Reference Confidence + Intent-Class Isolation (TEST-CORRECT)
+Action Executor
+Day 17.6 — Confidence Gating + Follow-up + Slot Recovery (FINAL)
 """
 
 import logging
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from core.nlp.intent import Intent
 from core.nlp.argument_extractor import ArgumentExtractor
@@ -15,6 +15,15 @@ from core.context.follow_up import FollowUpContext, INTENT_ENTITY_WHITELIST
 logger = logging.getLogger(__name__)
 
 DANGEROUS_INTENTS = {Intent.OPEN_TERMINAL}
+
+REQUIRED_ARGS = {
+    "open_browser": ["url"],
+    "search_web": ["query"],
+    "open_file_manager": ["path"],
+    "list_files": ["path"],
+    "open_file": ["filename"],
+    "open_terminal": ["command"],
+}
 
 
 class ActionExecutor:
@@ -28,10 +37,41 @@ class ActionExecutor:
         self.high_confidence = 0.7
         self.min_reference_confidence = 0.5
 
-        self.action_history = []
+        self.action_history: List[Dict[str, Any]] = []
 
     # =====================================================
-    # PUBLIC ENTRY
+    # SLOT INSPECTION
+    # =====================================================
+    def get_missing_args(self, intent: Intent, text: str) -> List[str]:
+        required = REQUIRED_ARGS.get(intent.value, [])
+        if not required:
+            return []
+
+        args = self.argument_extractor.extract_for_intent(text, intent.value)
+        return [k for k in required if not args.get(k)]
+
+    # =====================================================
+    # SLOT RECOVERY
+    # =====================================================
+    def fill_missing(
+        self,
+        intent: Intent,
+        followup_text: str,
+        missing: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+
+        args = self.argument_extractor.extract_for_intent(
+            followup_text, intent.value
+        ) or {}
+
+        # Single-slot recovery → full text maps to slot
+        if missing and len(missing) == 1 and not args.get(missing[0]):
+            args[missing[0]] = followup_text.strip()
+
+        return args
+
+    # =====================================================
+    # EXECUTION ENTRY
     # =====================================================
     def execute(
         self,
@@ -43,7 +83,7 @@ class ActionExecutor:
 
         logger.info("Intent=%s confidence=%.2f", intent.value, confidence)
 
-        # UNKNOWN → clear context, but allow fallback later
+        # ---------------- UNKNOWN ----------------
         if intent == Intent.UNKNOWN:
             self.follow_up_context.clear_context()
             return {
@@ -53,31 +93,62 @@ class ActionExecutor:
                 "executed": False,
             }
 
+        # ---------------- PRONOUN GUARD (GLOBAL) ----------------
+        if re.search(r"\b(it|that|there|again|same|them)\b", text.lower()):
+            last = (
+                self.follow_up_context.contexts[-1]
+                if self.follow_up_context.contexts
+                else None
+            )
+
+            if not last:
+                return {
+                    "success": False,
+                    "message": "No previous context to refer to.",
+                    "confidence": confidence,
+                    "executed": False,
+                }
+
+            # 🔒 FINAL RULE — NO CROSS-INTENT CONTEXT
+            if last.get("action") != intent.value:
+                return {
+                    "success": False,
+                    "message": "Previous context does not apply to this action.",
+                    "confidence": confidence,
+                    "executed": False,
+                }
+
+        # ---------------- FOLLOW-UP ----------------
         followup = self._try_follow_up(intent, text, confidence)
         if followup is not None:
             return followup
 
-        allowed, reason = self._check_confidence(intent, confidence)
-        if not allowed:
-            self.follow_up_context.clear_context()
+        # ---------------- CONFIDENCE GATE ----------------
+        if confidence < self.min_confidence:
             return {
                 "success": False,
-                "message": self._rejection_message(reason, confidence),
+                "message": "I can’t perform that action.",
                 "confidence": confidence,
                 "executed": False,
             }
 
+        # ---------------- ARGUMENT EXTRACTION ----------------
         args = self.argument_extractor.extract_for_intent(text, intent.value)
-        valid, msg = self.argument_extractor.validate_arguments(args, intent.value)
-        if not valid:
-            self.follow_up_context.clear_context()
-            return {
-                "success": False,
-                "message": msg,
-                "confidence": confidence,
-                "executed": False,
-            }
+        if replay_args:
+            args = {**args, **replay_args}
 
+        # ---------------- SLOT CHECK ----------------
+        for slot in REQUIRED_ARGS.get(intent.value, []):
+            if not args.get(slot):
+                self.follow_up_context.clear_context()
+                return {
+                    "success": False,
+                    "message": f"Please provide {slot}.",
+                    "confidence": confidence,
+                    "executed": False,
+                }
+
+        # ---------------- EXECUTE ----------------
         result = self._execute_action_by_name(intent.value, args)
 
         if result.get("success"):
@@ -89,7 +160,7 @@ class ActionExecutor:
         else:
             self.follow_up_context.clear_context()
 
-        self._log(intent, text, confidence, result)
+        self._log(intent, text, confidence)
 
         return {
             "success": result.get("success", False),
@@ -101,47 +172,24 @@ class ActionExecutor:
         }
 
     # =====================================================
-    # FOLLOW-UP HANDLING (FINAL)
+    # FOLLOW-UP HANDLER (INTENT-ISOLATED)
     # =====================================================
     def _try_follow_up(
         self, intent: Intent, text: str, confidence: float
     ) -> Optional[Dict[str, Any]]:
 
-        # WORD-SAFE reference detection
         if not re.search(r"\b(it|that|there|again|same|them)\b", text.lower()):
             return None
 
         if confidence < self.min_reference_confidence:
             return {
                 "success": False,
-                "message": "I’m not sure what you want to repeat. Please be specific.",
+                "message": "Please be more specific.",
                 "confidence": confidence,
                 "executed": False,
             }
 
-        # 🔑 CRITICAL FIX
-        had_context_before = bool(self.follow_up_context.contexts)
-
-        context, reason = self.follow_up_context.resolve_reference(text)
-
-        if reason == "cross_intent_blocked":
-            return {
-                "success": False,
-                "message": "I can’t apply that action to the previous context.",
-                "confidence": confidence,
-                "executed": False,
-            }
-
-        # ❌ Block ONLY if context existed but expired
-        if not context and reason == "no_context" and had_context_before:
-            return {
-                "success": False,
-                "message": "The previous context is no longer available.",
-                "confidence": confidence,
-                "executed": False,
-            }
-
-        # ✅ No previous context → allow fallback
+        context, _ = self.follow_up_context.resolve_reference(text)
         if not context:
             return None
 
@@ -160,9 +208,6 @@ class ActionExecutor:
 
         result = self._execute_action_by_name(intent.value, args)
 
-        if not result.get("success"):
-            self.follow_up_context.clear_context()
-
         return {
             "success": result.get("success", False),
             "message": result.get("message", ""),
@@ -174,10 +219,11 @@ class ActionExecutor:
         }
 
     # =====================================================
-    # HELPERS
+    # ACTION DISPATCH
     # =====================================================
     def _execute_action_by_name(self, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
         sa = self.system_actions
+
         if action == "open_browser":
             return sa.open_browser(args.get("url"), args.get("target"))
         if action == "search_web":
@@ -187,26 +233,19 @@ class ActionExecutor:
         if action == "list_files":
             return sa.list_files(args.get("path"), args.get("target"))
         if action == "open_file":
-            return sa.open_file(args.get("filename"), args.get("full_path"), args.get("target"))
+            return sa.open_file(
+                args.get("filename"), args.get("full_path"), args.get("target")
+            )
         if action == "open_terminal":
             return sa.open_terminal(args.get("command"), args.get("target"))
+
         return {"success": False, "message": f"Intent not implemented: {action}"}
 
     def _filter_args_by_intent(self, intent: str, args: Dict[str, Any]) -> Dict[str, Any]:
         allowed = INTENT_ENTITY_WHITELIST.get(intent, [])
         return {k: v for k, v in (args or {}).items() if k in allowed}
 
-    def _check_confidence(self, intent: Intent, confidence: float):
-        if confidence < self.min_confidence:
-            return False, "low"
-        if intent in DANGEROUS_INTENTS and confidence < self.high_confidence:
-            return False, "danger"
-        return True, "ok"
-
-    def _rejection_message(self, reason: str, confidence: float) -> str:
-        return "I can’t perform that action."
-
-    def _log(self, intent: Intent, text: str, confidence: float, result: Dict[str, Any]):
+    def _log(self, intent: Intent, text: str, confidence: float):
         self.action_history.append(
             {"intent": intent.value, "text": text, "confidence": confidence}
         )
