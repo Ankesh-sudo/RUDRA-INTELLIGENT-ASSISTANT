@@ -60,6 +60,13 @@ def has_reference(tokens: list[str]) -> bool:
     return "__REF__" in tokens or "__REPEAT__" in tokens
 
 
+# ===============================
+# Day 17.4 — Pronoun-only detector
+# ===============================
+def is_pronoun_only(tokens: list[str]) -> bool:
+    return "__REF__" in tokens or "__REPEAT__" in tokens
+
+
 class Assistant:
     def __init__(self):
         self.input = InputController()
@@ -104,7 +111,7 @@ class Assistant:
         else:
             logger.error("MySQL connection FAILED: {}", msg)
 
-        logger.info("Day 17.3 started — Cooldown & help prompts enabled")
+        logger.info("Day 17.4 started — Pronoun block after clarification enabled")
 
         while self.running:
             raw_text = self.input.read()
@@ -149,6 +156,20 @@ class Assistant:
             tokens = normalize_text(clean_text)
             # -----------------------------------------------
 
+            # =================================================
+            # 🔒 Day 17.4 — PRONOUN BLOCK AFTER CLARIFICATION
+            # =================================================
+            if (
+                self.last_was_clarification
+                and is_pronoun_only(tokens)
+                and not self.ctx.has_last_action()
+            ):
+                print("Rudra > Please say a full command so I can help you.")
+                logger.warning("[DAY 17.4] Pronoun blocked after clarification")
+                self.expecting_followup = False
+                continue
+            # =================================================
+
             scores = {}
             confidence = 0.0
             intent = Intent.UNKNOWN
@@ -173,7 +194,6 @@ class Assistant:
                     logger.warning("[DAY 14 BLOCK] Reference used with no context")
                     continue
             else:
-                # -------- NORMAL INTENT DETECTION --------
                 scores = score_intents(tokens)
                 intent, confidence = pick_best_intent(scores, tokens)
 
