@@ -24,8 +24,11 @@ from core.memory.context_pack import ContextPackBuilder
 # Day 20.2
 from core.memory.follow_up_resolver import FollowUpResolver
 
-# 🆕 Day 20.3
+# Day 20.3
 from core.memory.slot_preference_merger import SlotPreferenceMerger
+
+# 🆕 Day 20.4
+from core.memory.confidence_adjuster import ConfidenceAdjuster
 
 
 INTENT_CONFIDENCE_THRESHOLD = 0.65
@@ -109,7 +112,7 @@ class Assistant:
         GLOBAL_INTERRUPT.clear()
 
     # =================================================
-    # CORE SINGLE CYCLE (Day 20.3)
+    # CORE SINGLE CYCLE (Day 20.4)
     # =================================================
     def _cycle(self):
         # Working Memory
@@ -119,11 +122,10 @@ class Assistant:
         context_builder = ContextPackBuilder()
         context_pack = context_builder.build()
 
-        # Follow-up resolver
+        # Memory helpers
         follow_up_resolver = FollowUpResolver()
-
-        # Slot + preference merger
         slot_merger = SlotPreferenceMerger()
+        confidence_adjuster = ConfidenceAdjuster()
 
         raw_text = self.input.read()
         if not raw_text and not self.pending_intent:
@@ -181,7 +183,7 @@ class Assistant:
 
         wm.set_intent(intent.value, confidence)
 
-        # Memory-aware ambiguity handling
+        # ---- Ambiguity resolution (Day 20.2) ----
         if confidence < INTENT_CONFIDENCE_THRESHOLD or intent == Intent.UNKNOWN:
             resolved = follow_up_resolver.resolve(
                 tokens=tokens,
@@ -199,12 +201,18 @@ class Assistant:
                 print(f"Rudra > {self.next_clarification()}")
                 return
 
-        # -------- SLOT + PREFERENCE MERGE (Day 20.3) --------
+        # ---- Confidence adjustment (Day 20.4) ----
+        confidence = confidence_adjuster.adjust(
+            base_confidence=confidence,
+            intent=intent.value,
+            context_pack=context_pack
+        )
+
+        # ---- Slot + preference merge (Day 20.3) ----
         missing = self.action_executor.get_missing_args(intent, clean_text)
 
         if missing:
             preferences = context_pack.get("user_preferences", [])
-
             allowed_defaults = set(missing)
 
             merged_args = slot_merger.merge(
@@ -227,7 +235,7 @@ class Assistant:
             print(f"Rudra > Please provide {', '.join(missing)}.")
             return
 
-        # ---------------------------------------------------
+        # ------------------------------------------------
 
         save_message("user", clean_text, intent.value)
 
@@ -250,7 +258,7 @@ class Assistant:
     # PRODUCTION LOOP
     # =================================================
     def run(self):
-        logger.info("Day 20.3 — Slot defaults via memory enabled")
+        logger.info("Day 20.4 — Memory-informed confidence enabled")
         while self.running:
             self._cycle()
 
