@@ -15,8 +15,11 @@ from core.control.global_interrupt import GLOBAL_INTERRUPT
 from core.control.interrupt_words import INTERRUPT_KEYWORDS
 from core.control.interrupt_policy import INTERRUPT_POLICY  # Day 18.4
 
-# 🆕 Day 19.2
+# Day 19.2
 from core.memory.working_memory import WorkingMemory
+
+# 🆕 Day 20.1
+from core.memory.context_pack import ContextPackBuilder
 
 
 INTENT_CONFIDENCE_THRESHOLD = 0.65
@@ -112,11 +115,16 @@ class Assistant:
         GLOBAL_INTERRUPT.clear()
 
     # =================================================
-    # CORE SINGLE CYCLE (Day 19.2)
+    # CORE SINGLE CYCLE (Day 20.1)
     # =================================================
     def _cycle(self):
         # 🆕 Working Memory — per interaction
         wm = WorkingMemory()
+
+        # 🆕 Context Pack — read-only (no usage yet)
+        context_builder = ContextPackBuilder()
+        context_pack = context_builder.build()
+        # NOTE: context_pack intentionally unused (Day 20.1 rule)
 
         raw_text = self.input.read()
         if not raw_text and not self.pending_intent:
@@ -172,7 +180,7 @@ class Assistant:
             confidence, tokens, intent.value, self.ctx.last_intent
         )
 
-        # 🆕 Feed Working Memory
+        # Feed Working Memory
         wm.set_intent(intent.value, confidence)
 
         if confidence < INTENT_CONFIDENCE_THRESHOLD or intent == Intent.UNKNOWN:
@@ -207,7 +215,7 @@ class Assistant:
     # PRODUCTION LOOP
     # =================================================
     def run(self):
-        logger.info("Day 19.2 — Working Memory enabled")
+        logger.info("Day 20.1 — Context Pack enabled (read-only)")
         while self.running:
             self._cycle()
 
