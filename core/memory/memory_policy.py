@@ -23,8 +23,29 @@ class MemoryDecisionEngine:
     No bypasses. Ever.
     """
 
-    # Tunable thresholds (locked for now)
-    MIN_CONFIDENCE = 0.60
+    # ===============================
+    # DAY 21.2 — TIGHTENED THRESHOLDS
+    # ===============================
+
+    # Raised confidence threshold
+    MIN_CONFIDENCE = 0.70
+
+    # STM intent whitelist (explicit)
+    STM_INTENT_WHITELIST = {
+        "open_browser",
+        "search",
+        "set_reminder",
+        "play_music",
+        "note",
+    }
+
+    # Intents that must NEVER be stored
+    INTENT_BLACKLIST = {
+        "greeting",
+        "help",
+        "exit",
+        "unknown",
+    }
 
     @staticmethod
     def decide(
@@ -51,21 +72,43 @@ class MemoryDecisionEngine:
         - MemoryType.NONE / STM / LTM
         """
 
-        # 1) Confidence gate
+        # -------------------------------------------------
+        # 1) Confidence gate (STRICT)
+        # -------------------------------------------------
         if confidence < MemoryDecisionEngine.MIN_CONFIDENCE:
             return MemoryType.NONE
 
-        # 2) Never store system or commands
+        # -------------------------------------------------
+        # 2) Never store system-level or raw commands
+        # -------------------------------------------------
         if content_type in {"command", "system"}:
             return MemoryType.NONE
 
-        # 3) Conversational continuity → STM
+        # -------------------------------------------------
+        # 3) Intent must be valid and allowed
+        # -------------------------------------------------
+        if not intent_name:
+            return MemoryType.NONE
+
+        if intent_name in MemoryDecisionEngine.INTENT_BLACKLIST:
+            return MemoryType.NONE
+
+        # -------------------------------------------------
+        # 4) STM admission (conversation only, whitelisted)
+        # -------------------------------------------------
         if content_type == "conversation":
-            return MemoryType.STM
+            if intent_name in MemoryDecisionEngine.STM_INTENT_WHITELIST:
+                return MemoryType.STM
+            return MemoryType.NONE
 
-        # 4) Stable user data → LTM
+        # -------------------------------------------------
+        # 5) LTM is LOCKED for Day 21.x
+        # -------------------------------------------------
+        # Even stable user data is intentionally blocked here.
         if content_type in {"user_fact", "user_preference"}:
-            return MemoryType.LTM
+            return MemoryType.NONE
 
+        # -------------------------------------------------
         # Default: do not store
+        # -------------------------------------------------
         return MemoryType.NONE
