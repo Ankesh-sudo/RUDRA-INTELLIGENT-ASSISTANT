@@ -13,28 +13,18 @@ from core.actions.action_executor import ActionExecutor
 
 from core.control.global_interrupt import GLOBAL_INTERRUPT
 from core.control.interrupt_words import INTERRUPT_KEYWORDS
-from core.control.interrupt_policy import INTERRUPT_POLICY  # Day 18.4
+from core.control.interrupt_policy import INTERRUPT_POLICY
 
-# Day 19.2
 from core.memory.working_memory import WorkingMemory
-
-# Day 20.1
 from core.memory.context_pack import ContextPackBuilder
-
-# Day 20.2
 from core.memory.follow_up_resolver import FollowUpResolver
-
-# Day 20.3
 from core.memory.slot_preference_merger import SlotPreferenceMerger
-
-# Day 20.4
 from core.memory.confidence_adjuster import ConfidenceAdjuster
-
-# Day 21.1 — Memory entry point (policy-controlled)
 from core.memory.memory_manager import MemoryManager
-
-# Day 21.5 — STM read (READ-ONLY)
 from core.memory.short_term_memory import ShortTermMemory
+
+# 🔵 Day 22.3 — LTM promotion (READ-ONLY)
+from core.memory.ltm.promotion_evaluator import MemoryPromotionEvaluator
 
 
 INTENT_CONFIDENCE_THRESHOLD = 0.65
@@ -60,18 +50,17 @@ class Assistant:
 
         self.action_executor = ActionExecutor()
 
-        # Slot recovery (Day 17.6)
         self.pending_intent = None
         self.pending_args = {}
         self.missing_args = []
 
         self.clarify_index = 0
 
-        # Day 21.1 — Memory manager (policy enforced internally)
         self.memory_manager = MemoryManager()
-
-        # Day 21.5 — STM (read-only usage)
         self.stm = ShortTermMemory()
+
+        # 🔵 Day 22.3 — Promotion evaluator (inactive, read-only)
+        self.memory_promotion_evaluator = MemoryPromotionEvaluator()
 
     # =================================================
     # UTIL
@@ -87,7 +76,7 @@ class Assistant:
         return INTERRUPT_POLICY.get(intent, "HARD")
 
     # =================================================
-    # DAY 18.2+ — EMBEDDED INTERRUPT DETECTION
+    # EMBEDDED INTERRUPT DETECTION
     # =================================================
     def _detect_embedded_interrupt(self, tokens: list[str]) -> bool:
         for idx, token in enumerate(tokens):
@@ -98,11 +87,10 @@ class Assistant:
         return False
 
     # =================================================
-    # DAY 18.4 — INTENT-AWARE INTERRUPT HANDLER
+    # INTERRUPT HANDLER
     # =================================================
     def _handle_interrupt(self, source: str, intent: Intent | None):
         policy = self._get_interrupt_policy(intent)
-
         logger.warning(f"Interrupt triggered ({source}) | policy={policy}")
 
         if policy == "IGNORE":
@@ -124,25 +112,21 @@ class Assistant:
         GLOBAL_INTERRUPT.clear()
 
     # =================================================
-    # CORE SINGLE CYCLE (Day 21.5)
+    # CORE SINGLE CYCLE
     # =================================================
     def _cycle(self):
-        # Working Memory
         wm = WorkingMemory()
 
-        # Context Pack (read-only base)
         context_builder = ContextPackBuilder()
         context_pack = context_builder.build()
 
-        # Day 21.5 — Attach STM read-only context
         recent_user_stm = self.stm.fetch_recent(
             role="user",
             limit=3,
             min_confidence=0.70
         )
-        context_pack["stm_recent"] = recent_user_stm  # consultative only
+        context_pack["stm_recent"] = recent_user_stm
 
-        # Helpers
         follow_up_resolver = FollowUpResolver()
         slot_merger = SlotPreferenceMerger()
         confidence_adjuster = ConfidenceAdjuster()
@@ -159,14 +143,11 @@ class Assistant:
         clean_text = validation["clean_text"]
         tokens = normalize_text(clean_text)
 
-        # 🔴 INTERRUPT
-        current_intent = self.pending_intent
         if self._detect_embedded_interrupt(tokens):
-            self._handle_interrupt("embedded", current_intent)
+            self._handle_interrupt("embedded", self.pending_intent)
             wm.mark_interrupted()
             return
 
-        # ================= SLOT RECOVERY =================
         if self.pending_intent:
             new_args = self.action_executor.fill_missing(
                 self.pending_intent, clean_text, self.missing_args
@@ -194,7 +175,6 @@ class Assistant:
             self.missing_args = []
             return
 
-        # ================= NORMAL FLOW =================
         scores = score_intents(tokens)
         intent, confidence = pick_best_intent(scores, tokens)
         confidence = refine_confidence(
@@ -203,44 +183,28 @@ class Assistant:
 
         wm.set_intent(intent.value, confidence)
 
-        # ---- Ambiguity resolution (Day 20.2 + STM context) ----
         if confidence < INTENT_CONFIDENCE_THRESHOLD or intent == Intent.UNKNOWN:
-            resolved = follow_up_resolver.resolve(
-                tokens=tokens,
-                context_pack=context_pack
-            )
-
+            resolved = follow_up_resolver.resolve(tokens, context_pack)
             if resolved:
-                try:
-                    intent = Intent(resolved["resolved_intent"])
-                    confidence = 0.7
-                except Exception:
-                    print(f"Rudra > {self.next_clarification()}")
-                    return
+                intent = Intent(resolved["resolved_intent"])
+                confidence = 0.7
             else:
-                print(f"Rudra > {self.next_clarification()}")
+                print(self.next_clarification())
                 return
 
-        # ---- Confidence adjustment (Day 20.4) ----
         confidence = confidence_adjuster.adjust(
             base_confidence=confidence,
             intent=intent.value,
             context_pack=context_pack
         )
 
-        # ---- Slot + preference merge (Day 20.3) ----
         missing = self.action_executor.get_missing_args(intent, clean_text)
-
         if missing:
-            preferences = context_pack.get("user_preferences", [])
-            allowed_defaults = set(missing)
-
             merged_args = slot_merger.merge(
                 slots={},
-                preferences=preferences,
-                allowed_keys=allowed_defaults
+                preferences=context_pack.get("user_preferences", []),
+                allowed_keys=set(missing)
             )
-
             if merged_args:
                 self.action_executor.execute(
                     intent,
@@ -255,9 +219,6 @@ class Assistant:
             print(f"Rudra > Please provide {', '.join(missing)}.")
             return
 
-        # =================================================
-        # Day 21.1 — Controlled Memory Entry (POLICY-SAFE)
-        # =================================================
         self.memory_manager.consider(
             role="user",
             content=clean_text,
@@ -265,8 +226,6 @@ class Assistant:
             confidence=confidence,
             content_type="conversation"
         )
-
-        # ------------------------------------------------
 
         save_message("user", clean_text, intent.value)
 
@@ -281,20 +240,27 @@ class Assistant:
             result = self.action_executor.execute(intent, clean_text, confidence)
             response = result.get("message", "Done.")
 
+            # 🔵 Day 22.3 — READ-ONLY promotion plan
+            promotion_plan = self.memory_promotion_evaluator.evaluate(
+                confidence=confidence,
+                repetition_count=1,
+                user_confirmed=False,
+                memory_summary=f"{intent.value}: {clean_text}"
+            )
+
+            logger.debug(
+                f"LTM promotion plan (inactive): "
+                f"{promotion_plan.action.value} | {promotion_plan.reason}"
+            )
+
         print(f"Rudra > {response}")
         save_message("assistant", response, intent.value)
         self.ctx.update(intent.value)
 
-    # =================================================
-    # PRODUCTION LOOP
-    # =================================================
     def run(self):
-        logger.info("Day 21.5 — STM read-only context integrated")
+        logger.info("Day 22.3 — LTM promotion plan computed (read-only)")
         while self.running:
             self._cycle()
 
-    # =================================================
-    # TEST-SAFE SINGLE CYCLE
-    # =================================================
     def run_once(self):
         self._cycle()
