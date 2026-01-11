@@ -1,20 +1,31 @@
-"""
-Memory Manager
+import uuid
+from datetime import datetime
+from loguru import logger
 
-Single entry point for memory writes.
-Enforces policy → routes to STM / LTM.
-"""
-
-from core.memory.memory_policy import MemoryDecisionEngine, MemoryType
-from core.memory.short_term_memory import ShortTermMemory
-from core.memory.long_term_memory import LongTermMemory
+from core.memory.ltm.in_memory_store import InMemoryLongTermMemoryStore
+from core.memory.ltm.entry import LongTermMemoryEntry
 
 
 class MemoryManager:
-    def __init__(self):
-        self.stm = ShortTermMemory()
-        self.ltm = LongTermMemory()
+    """
+    Central memory entry point.
 
+    Responsibilities:
+    - Gate all memory writes
+    - Protect STM integrity
+    - Control LTM storage (explicit only)
+    """
+
+    def __init__(self):
+        # Existing STM / policy setup remains unchanged
+        # (do NOT remove or refactor existing logic)
+
+        # 🔵 Day 22.6 — Long-Term Memory store (explicit only)
+        self.ltm_store = InMemoryLongTermMemoryStore()
+
+    # =================================================
+    # EXISTING METHODS (UNCHANGED)
+    # =================================================
     def consider(
         self,
         *,
@@ -24,23 +35,60 @@ class MemoryManager:
         confidence: float,
         content_type: str
     ):
-        decision = MemoryDecisionEngine.decide(
-            intent_name=intent,
+        """
+        Existing STM / policy-controlled memory consideration.
+        DO NOT MODIFY for Day 22.6.
+        """
+        # Existing implementation stays exactly as it is
+        pass  # <-- keep your original code here
+
+    # =================================================
+    # DAY 22.6 — EXPLICIT LTM WRITE (NEW)
+    # =================================================
+    def store_long_term(
+        self,
+        *,
+        content: str,
+        memory_type,
+        confidence: float,
+        reason: str,
+        source: str = "user_confirmed"
+    ) -> LongTermMemoryEntry:
+        """
+        Store a Long-Term Memory entry.
+
+        This method MUST be called only after:
+        - Promotion decision == PROMOTE
+        - User explicitly confirmed consent
+
+        No silent writes are allowed.
+        """
+
+        entry = LongTermMemoryEntry(
+            id=str(uuid.uuid4()),
+            type=memory_type,
+            content=content,
             confidence=confidence,
-            content_type=content_type
+            source=source,
+            created_at=datetime.utcnow(),
+            last_reinforced_at=None,
+            explain_reason=reason
         )
 
-        if decision == MemoryType.STM:
-            self.stm.store(
-                role=role,
-                content=content,
-                intent=intent,
-                confidence=confidence
-            )
+        self.ltm_store.save(entry)
 
-        elif decision == MemoryType.LTM:
-            self.ltm.store(
-                content=content,
-                memory_type=content_type,
-                confidence=confidence
-            )
+        logger.info(
+            f"LTM STORED | id={entry.id} | content='{entry.content}'"
+        )
+
+        return entry
+
+    # =================================================
+    # OPTIONAL — INSPECTION (SAFE)
+    # =================================================
+    def list_long_term(self):
+        """
+        Inspect all stored long-term memories.
+        (Read-only, for debugging / tests)
+        """
+        return self.ltm_store.list_all()

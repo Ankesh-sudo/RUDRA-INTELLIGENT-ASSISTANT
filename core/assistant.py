@@ -23,7 +23,7 @@ from core.memory.confidence_adjuster import ConfidenceAdjuster
 from core.memory.memory_manager import MemoryManager
 from core.memory.short_term_memory import ShortTermMemory
 
-# 🔵 Day 22.3 — LTM promotion
+# 🔵 LTM promotion + consent
 from core.memory.ltm.promotion_evaluator import (
     MemoryPromotionEvaluator,
     PromotionAction
@@ -64,7 +64,7 @@ class Assistant:
         self.memory_manager = MemoryManager()
         self.stm = ShortTermMemory()
 
-        # 🔵 Day 22.5 — Promotion evaluator (consent enabled)
+        # 🔵 Promotion evaluator
         self.memory_promotion_evaluator = MemoryPromotionEvaluator()
 
     # =================================================
@@ -257,7 +257,7 @@ class Assistant:
                 f"{promotion_plan.action.value} | {promotion_plan.reason}"
             )
 
-            # 🔴 Day 22.5 — ASK CONSENT (NO STORAGE)
+            # 🔴 Day 22.6 — ASK CONSENT + STORE LTM
             if promotion_plan.action == PromotionAction.ASK_CONSENT:
                 print(f"Rudra > {promotion_plan.consent_prompt}")
 
@@ -268,12 +268,20 @@ class Assistant:
                     f"LTM consent response: confirmed={user_confirmed}"
                 )
 
+                if user_confirmed:
+                    self.memory_manager.store_long_term(
+                        content=clean_text,
+                        memory_type=None,  # classified in Day 23
+                        confidence=confidence,
+                        reason="User explicitly approved memory storage"
+                    )
+
         print(f"Rudra > {response}")
         save_message("assistant", response, intent.value)
         self.ctx.update(intent.value)
 
     def run(self):
-        logger.info("Day 22.5 — LTM consent asking enabled (no storage)")
+        logger.info("Day 22.6 — LTM storage enabled (explicit, audited)")
         while self.running:
             self._cycle()
 
