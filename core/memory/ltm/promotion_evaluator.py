@@ -18,6 +18,7 @@ class PromotionAction(Enum):
 class PromotionPlan:
     action: PromotionAction
     reason: str
+    consent_prompt: str | None = None
 
 
 class MemoryPromotionEvaluator:
@@ -40,19 +41,26 @@ class MemoryPromotionEvaluator:
             user_confirmed=user_confirmed
         )
 
+        # ---- Explicit confirmation → promote immediately ----
         if decision == PromotionDecision.PROMOTE:
             return PromotionPlan(
                 action=PromotionAction.PROMOTE,
-                reason="User explicitly confirmed memory"
+                reason="User explicitly confirmed memory",
+                consent_prompt=None
             )
 
+        # ---- Eligible for consent request ----
         if confidence > 0.85 and repetition_count >= 2:
+            prompt = self.consent_gate.build_prompt(memory_summary)
             return PromotionPlan(
                 action=PromotionAction.ASK_CONSENT,
-                reason="High confidence and repeated signal"
+                reason="High confidence and repeated signal",
+                consent_prompt=prompt
             )
 
+        # ---- Not eligible ----
         return PromotionPlan(
             action=PromotionAction.IGNORE,
-            reason="Insufficient confidence or repetition"
+            reason="Insufficient confidence or repetition",
+            consent_prompt=None
         )
