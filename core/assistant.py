@@ -23,9 +23,11 @@ from core.memory.confidence_adjuster import ConfidenceAdjuster
 from core.memory.memory_manager import MemoryManager
 from core.memory.short_term_memory import ShortTermMemory
 
-# 🔵 Day 22.3 — LTM promotion (READ-ONLY)
-from core.memory.ltm.promotion_evaluator import MemoryPromotionEvaluator
-
+# 🔵 Day 22.3 — LTM promotion
+from core.memory.ltm.promotion_evaluator import (
+    MemoryPromotionEvaluator,
+    PromotionAction
+)
 
 INTENT_CONFIDENCE_THRESHOLD = 0.65
 
@@ -38,6 +40,9 @@ CLARIFICATION_MESSAGES = [
 IDLE, ACTIVE, WAITING = "idle", "active", "waiting"
 
 NEGATION_TOKENS = {"dont", "do", "not", "never", "no"}
+
+AFFIRMATIVE = {"yes", "yeah", "yep", "sure", "ok"}
+NEGATIVE = {"no", "nope", "nah"}
 
 
 class Assistant:
@@ -59,7 +64,7 @@ class Assistant:
         self.memory_manager = MemoryManager()
         self.stm = ShortTermMemory()
 
-        # 🔵 Day 22.3 — Promotion evaluator (inactive, read-only)
+        # 🔵 Day 22.5 — Promotion evaluator (consent enabled)
         self.memory_promotion_evaluator = MemoryPromotionEvaluator()
 
     # =================================================
@@ -240,7 +245,6 @@ class Assistant:
             result = self.action_executor.execute(intent, clean_text, confidence)
             response = result.get("message", "Done.")
 
-            # 🔵 Day 22.3 — READ-ONLY promotion plan
             promotion_plan = self.memory_promotion_evaluator.evaluate(
                 confidence=confidence,
                 repetition_count=1,
@@ -249,16 +253,27 @@ class Assistant:
             )
 
             logger.debug(
-                f"LTM promotion plan (inactive): "
+                f"LTM promotion plan: "
                 f"{promotion_plan.action.value} | {promotion_plan.reason}"
             )
+
+            # 🔴 Day 22.5 — ASK CONSENT (NO STORAGE)
+            if promotion_plan.action == PromotionAction.ASK_CONSENT:
+                print(f"Rudra > {promotion_plan.consent_prompt}")
+
+                reply = (self.input.read() or "").strip().lower()
+                user_confirmed = reply in AFFIRMATIVE
+
+                logger.info(
+                    f"LTM consent response: confirmed={user_confirmed}"
+                )
 
         print(f"Rudra > {response}")
         save_message("assistant", response, intent.value)
         self.ctx.update(intent.value)
 
     def run(self):
-        logger.info("Day 22.3 — LTM promotion plan computed (read-only)")
+        logger.info("Day 22.5 — LTM consent asking enabled (no storage)")
         while self.running:
             self._cycle()
 
