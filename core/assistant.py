@@ -26,6 +26,9 @@ from core.memory.short_term_memory import ShortTermMemory
 # 🔵 Day 25.1 — Memory usage mode (DEFAULT OFF)
 from core.memory.usage_mode import MemoryUsageMode
 
+# 🔵 Day 25.5 — Memory usage trace sink (session-owned)
+from core.memory.trace_sink import MemoryTraceSink
+
 # 🔵 LTM promotion + consent
 from core.memory.ltm.promotion_evaluator import (
     MemoryPromotionEvaluator,
@@ -73,6 +76,9 @@ class Assistant:
 
         # 🔒 Day 25.1 — Memory usage is OFF by default
         self.memory_usage_mode = MemoryUsageMode.DISABLED
+
+        # 🧾 Day 25.5 — Session-owned memory trace sink
+        self.memory_trace_sink = MemoryTraceSink()
 
         # 🔵 Promotion evaluator
         self.memory_promotion_evaluator = MemoryPromotionEvaluator()

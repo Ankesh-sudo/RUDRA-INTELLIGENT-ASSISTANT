@@ -12,7 +12,7 @@ from core.memory.recall.recall_query import RecallQuery
 from core.memory.recall.recall_result import RecallResult
 from core.memory.recall.recall_manager import MemoryRecallManager
 
-# 🔵 Day 25.4 — Trace model (creation only, no emission)
+# 🔵 Day 25.4 — Trace model
 from core.memory.trace import MemoryUsageTrace
 
 
@@ -21,6 +21,7 @@ def controlled_recall(
     system_mode: MemoryUsageMode,
     permit: Optional[MemoryPermit],
     query: RecallQuery,
+    trace_sink,  # MemoryTraceSink (duck-typed)
 ) -> List[RecallResult]:
     """
     The ONLY authorized entry point for memory recall.
@@ -30,7 +31,7 @@ def controlled_recall(
     - read-only recall
     - no intent / confidence mutation
     - safe degradation
-    - auditable (traceable)
+    - auditable (trace recorded)
     """
 
     # 1️⃣ Global memory switch
@@ -64,8 +65,8 @@ def controlled_recall(
         manager = MemoryRecallManager()
         results = manager.recall(scoped_query)
 
-        # 🧾 Day 25.4 — Create trace (DO NOT EMIT YET)
-        _trace = MemoryUsageTrace(
+        # 🧾 Day 25.5 — Emit trace (session-owned, ephemeral)
+        trace = MemoryUsageTrace(
             permit_mode=permit.mode,
             query_text=query.text,
             query_category=query.category,
@@ -74,9 +75,7 @@ def controlled_recall(
             consumer="intelligence",
         )
 
-        # NOTE:
-        # - trace is intentionally unused for now
-        # - sink wiring happens in Day 25.5
+        trace_sink.record(trace)
 
         return results
 
