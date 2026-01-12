@@ -47,10 +47,12 @@ def _format_scope(scope: PreferenceScope) -> List[str]:
     ]
 
 
-# ---------- Preference Preview Formatting (Day 29.2) ----------
+# ---------- Preference Preview Formatting (Day 29.2 + 29.3) ----------
 
 def _format_previews(previews: List[PreferencePreview]) -> List[str]:
-    lines: List[str] = ["Preference preview:"]
+    lines: List[str] = [
+        "Preview — these preferences could affect this reply:"
+    ]
 
     if not previews:
         lines.append("- (none)")
@@ -58,7 +60,7 @@ def _format_previews(previews: List[PreferencePreview]) -> List[str]:
 
     for p in previews:
         lines.append(
-            f"- {p.key}={p.value} ({p.effect})"
+            f"- {p.key} = {p.value} — Effect: the reply would be {p.effect.replace('response', 'reply')}"
         )
 
     return lines
@@ -98,7 +100,7 @@ def format_influence_trace(events: list) -> List[str]:
                     f"Memory influence evaluated: {e.get('count', 0)} signals generated"
                 )
 
-    # ---- 2. Preference resolution (Day 29.1) ----
+    # ---- 2. Preference resolution (Day 29.1 wording refined) ----
     for e in events:
         kind = e.get("kind")
 
@@ -107,19 +109,19 @@ def format_influence_trace(events: list) -> List[str]:
 
         if kind == "preference_accepted":
             lines.append(
-                f"Preference resolved: {e.get('key')} (weight: {e.get('weight')})"
+                f"Preference available: {e.get('key')} = {e.get('value', '—')}"
             )
             scope = e.get("scope")
             if scope:
                 lines.extend(_format_scope(scope))
-            lines.append("  Result: eligible (not consumed)")
+            lines.append("  Status: available for approval")
 
         elif kind == "preference_rejected":
             lines.append(
-                f"Preference rejected: {e.get('key')} (reason: {e.get('reason')})"
+                f"Preference unavailable: {e.get('key')} (reason: {e.get('reason')})"
             )
 
-    # ---- 3. Preference preview & confirmation (Day 29.2) ----
+    # ---- 3. Preference preview & confirmation (Day 29.2 + 29.3 wording) ----
     for e in events:
         kind = e.get("kind")
 
@@ -130,14 +132,14 @@ def format_influence_trace(events: list) -> List[str]:
         elif kind == "preference_confirmed":
             confirmation_seen = True
             keys = ", ".join(sorted(e.get("keys", []))) or "—"
-            lines.append(f"Preferences confirmed: {keys}")
+            lines.append(f"You approved these preferences: {keys}")
 
         elif kind == "preference_rejected_by_user":
             keys = ", ".join(sorted(e.get("keys", []))) or "—"
-            lines.append(f"Preferences rejected by user: {keys}")
+            lines.append(f"You chose not to use: {keys}")
 
     if preview_seen and not confirmation_seen:
-        lines.append("No preferences confirmed yet.")
+        lines.append("No preferences are approved yet. Nothing will change.")
 
     # ---- 4. Output preference consumption ----
     for e in events:
@@ -164,17 +166,17 @@ def format_influence_trace(events: list) -> List[str]:
             )
 
         elif kind == "output_preference_opt_out":
-            lines.append("Output preference usage disabled by user")
+            lines.append("You disabled preference usage.")
 
         elif kind == "output_preference_reset":
-            lines.append("Output preferences reset for this session")
+            lines.append("Preferences were reset for this session.")
 
         elif kind == "output_preference_session_expired":
-            lines.append("Output preference usage expired at session end")
+            lines.append("Preference usage ended with the session.")
 
-    # ---- 5. Explicit no-effect summary ----
+    # ---- 5. Explicit no-effect summary (Day 29.3 wording) ----
     if preference_system_seen and not applied_any:
-        lines.append("No output preferences affected the response.")
+        lines.append("This reply was not changed by any preferences.")
 
     return lines
 
