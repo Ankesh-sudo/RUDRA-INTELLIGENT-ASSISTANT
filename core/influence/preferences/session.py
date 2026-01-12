@@ -15,16 +15,21 @@ class PreferenceSession:
             raise PreferenceLifecycleError("confirm without preview")
         self._confirmed.add(pref.key)
 
-    def apply(self, pref):
+    def apply(self, pref, preview=None):
         if pref.key not in self._confirmed:
             raise PreferenceLifecycleError("apply without confirmation")
 
         # context guard
         if self.active_context not in pref.scope.contexts:
-            return False  # safe no-op
+            return False
+
+        # preview consistency guard
+        if preview is not None and not preview.is_consistent():
+            return False
 
         self._applied[pref.key] = pref.scope.lifetime
         return True
+
 
     def is_active(self, pref):
         lifetime = self._applied.get(pref.key)
