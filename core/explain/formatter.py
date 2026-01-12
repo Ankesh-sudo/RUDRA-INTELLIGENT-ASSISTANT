@@ -47,7 +47,7 @@ def format_memory_trace(events: list) -> List[str]:
 
 def format_influence_trace(events: list) -> List[str]:
     """
-    Formats memory influence evaluation traces.
+    Formats memory + preference influence evaluation traces.
     Pure formatter — no logic, no inference.
     """
     lines: List[str] = []
@@ -55,6 +55,7 @@ def format_influence_trace(events: list) -> List[str]:
     for e in events:
         kind = e.get("kind")
 
+        # ---- Existing influence traces ----
         if kind == "memory_influence_gate":
             lines.append(
                 f"Memory influence gate: {e.get('decision')} ({e.get('reason')})"
@@ -76,6 +77,7 @@ def format_influence_trace(events: list) -> List[str]:
                     f"Memory influence evaluated: {e.get('count', 0)} signals generated"
                 )
 
+        # ---- Day 28.2 (output consumption) ----
         elif kind == "output_preference_applied":
             lines.append(
                 f"Output preference applied: {e.get('key')} = {e.get('value')} (surface: phrasing)"
@@ -84,6 +86,32 @@ def format_influence_trace(events: list) -> List[str]:
         elif kind == "output_preference_ignored":
             lines.append(
                 f"Output preference ignored: {e.get('key')} ({e.get('reason')})"
+            )
+
+        elif kind == "output_preference_allowed":
+            lines.append(
+                f"Output preferences allowed ({e.get('reason')})"
+            )
+
+        elif kind == "output_preference_blocked":
+            lines.append(
+                f"Output preferences blocked: {e.get('reason')}"
+            )
+
+        # ---- Day 28.3 (control surface) ----
+        elif kind == "output_preference_opt_out":
+            lines.append(
+                "Output preference usage disabled by user"
+            )
+
+        elif kind == "output_preference_reset":
+            lines.append(
+                "Output preferences reset for this session"
+            )
+
+        elif kind == "output_preference_session_expired":
+            lines.append(
+                "Output preference usage expired at session end"
             )
 
     return lines
@@ -112,7 +140,7 @@ def apply_output_preferences(
     if output_prefs.format == "bullet":
         result = "- " + result.replace(". ", "\n- ")
 
-    # Tone is acknowledged but intentionally inert in Day 28.2
+    # Tone is acknowledged but intentionally inert (no behavior change)
 
     return result
 
