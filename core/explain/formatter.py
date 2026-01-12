@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from core.influence.output_preferences import OutputPreferences
 from core.influence.preference_scope import PreferenceScope
+from core.influence.preference_preview import PreferencePreview
 
 
 # ---------- Core Formatting ----------
@@ -46,6 +47,23 @@ def _format_scope(scope: PreferenceScope) -> List[str]:
     ]
 
 
+# ---------- Preference Preview Formatting (Day 29.2) ----------
+
+def _format_previews(previews: List[PreferencePreview]) -> List[str]:
+    lines: List[str] = ["Preference preview:"]
+
+    if not previews:
+        lines.append("- (none)")
+        return lines
+
+    for p in previews:
+        lines.append(
+            f"- {p.key}={p.value} ({p.effect})"
+        )
+
+    return lines
+
+
 # ---------- Influence + Preference Formatting ----------
 
 def format_influence_trace(events: list) -> List[str]:
@@ -56,8 +74,10 @@ def format_influence_trace(events: list) -> List[str]:
 
     applied_any = False
     preference_system_seen = False
+    preview_seen = False
+    confirmation_seen = False
 
-    # ---- 1. Influence gating / evaluation ----
+    # ---- 1. Memory influence gating / evaluation ----
     for e in events:
         kind = e.get("kind")
 
@@ -78,7 +98,7 @@ def format_influence_trace(events: list) -> List[str]:
                     f"Memory influence evaluated: {e.get('count', 0)} signals generated"
                 )
 
-    # ---- 2. Preference resolution (Day 29.1 surface) ----
+    # ---- 2. Preference resolution (Day 29.1) ----
     for e in events:
         kind = e.get("kind")
 
@@ -87,7 +107,7 @@ def format_influence_trace(events: list) -> List[str]:
 
         if kind == "preference_accepted":
             lines.append(
-                f"Preference resolved: {e.get('key')} (source: {e.get('source')}, weight: {e.get('weight')})"
+                f"Preference resolved: {e.get('key')} (weight: {e.get('weight')})"
             )
             scope = e.get("scope")
             if scope:
@@ -99,12 +119,27 @@ def format_influence_trace(events: list) -> List[str]:
                 f"Preference rejected: {e.get('key')} (reason: {e.get('reason')})"
             )
 
-        elif kind == "preference_overridden":
-            lines.append(
-                f"Preference overridden: {e.get('key')} (winner: {e.get('winner')}, loser: {e.get('loser')})"
-            )
+    # ---- 3. Preference preview & confirmation (Day 29.2) ----
+    for e in events:
+        kind = e.get("kind")
 
-    # ---- 3. Output preference consumption ----
+        if kind == "preference_preview":
+            preview_seen = True
+            lines.extend(_format_previews(e.get("items", [])))
+
+        elif kind == "preference_confirmed":
+            confirmation_seen = True
+            keys = ", ".join(sorted(e.get("keys", []))) or "—"
+            lines.append(f"Preferences confirmed: {keys}")
+
+        elif kind == "preference_rejected_by_user":
+            keys = ", ".join(sorted(e.get("keys", []))) or "—"
+            lines.append(f"Preferences rejected by user: {keys}")
+
+    if preview_seen and not confirmation_seen:
+        lines.append("No preferences confirmed yet.")
+
+    # ---- 4. Output preference consumption ----
     for e in events:
         kind = e.get("kind")
 
@@ -137,7 +172,7 @@ def format_influence_trace(events: list) -> List[str]:
         elif kind == "output_preference_session_expired":
             lines.append("Output preference usage expired at session end")
 
-    # ---- 4. Explicit no-effect summary ----
+    # ---- 5. Explicit no-effect summary ----
     if preference_system_seen and not applied_any:
         lines.append("No output preferences affected the response.")
 
