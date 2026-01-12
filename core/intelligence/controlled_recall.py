@@ -1,4 +1,5 @@
 from typing import Optional, List
+from datetime import datetime
 
 from core.memory.usage_mode import MemoryUsageMode
 from core.memory.permit import MemoryPermit
@@ -10,6 +11,9 @@ from core.memory.guards import (
 from core.memory.recall.recall_query import RecallQuery
 from core.memory.recall.recall_result import RecallResult
 from core.memory.recall.recall_manager import MemoryRecallManager
+
+# 🔵 Day 25.4 — Trace model (creation only, no emission)
+from core.memory.trace import MemoryUsageTrace
 
 
 def controlled_recall(
@@ -26,6 +30,7 @@ def controlled_recall(
     - read-only recall
     - no intent / confidence mutation
     - safe degradation
+    - auditable (traceable)
     """
 
     # 1️⃣ Global memory switch
@@ -57,7 +62,24 @@ def controlled_recall(
     # 6️⃣ Safe recall execution
     try:
         manager = MemoryRecallManager()
-        return manager.recall(scoped_query)
+        results = manager.recall(scoped_query)
+
+        # 🧾 Day 25.4 — Create trace (DO NOT EMIT YET)
+        _trace = MemoryUsageTrace(
+            permit_mode=permit.mode,
+            query_text=query.text,
+            query_category=query.category,
+            result_ids=[r.memory_id for r in results],
+            timestamp=datetime.utcnow(),
+            consumer="intelligence",
+        )
+
+        # NOTE:
+        # - trace is intentionally unused for now
+        # - sink wiring happens in Day 25.5
+
+        return results
+
     except Exception:
         # 🔒 Never leak recall failures upward
         return []
