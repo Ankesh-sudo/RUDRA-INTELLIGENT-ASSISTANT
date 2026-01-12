@@ -29,6 +29,10 @@ from core.memory.ltm.promotion_evaluator import (
     PromotionAction
 )
 
+# 🔵 Day 23.2 — Classifier
+from core.memory.classifier import MemoryClassifier
+
+
 INTENT_CONFIDENCE_THRESHOLD = 0.65
 
 CLARIFICATION_MESSAGES = [
@@ -66,6 +70,9 @@ class Assistant:
 
         # 🔵 Promotion evaluator
         self.memory_promotion_evaluator = MemoryPromotionEvaluator()
+
+        # 🔵 Day 23.2 — Memory classifier
+        self.memory_classifier = MemoryClassifier()
 
     # =================================================
     # UTIL
@@ -153,33 +160,6 @@ class Assistant:
             wm.mark_interrupted()
             return
 
-        if self.pending_intent:
-            new_args = self.action_executor.fill_missing(
-                self.pending_intent, clean_text, self.missing_args
-            )
-            self.pending_args.update(new_args)
-
-            still_missing = [
-                k for k in self.missing_args if not self.pending_args.get(k)
-            ]
-
-            if still_missing:
-                print(f"Rudra > Please provide {', '.join(still_missing)}.")
-                self.missing_args = still_missing
-                return
-
-            self.action_executor.execute(
-                self.pending_intent,
-                clean_text,
-                confidence=0.85,
-                replay_args=self.pending_args,
-            )
-
-            self.pending_intent = None
-            self.pending_args = {}
-            self.missing_args = []
-            return
-
         scores = score_intents(tokens)
         intent, confidence = pick_best_intent(scores, tokens)
         confidence = refine_confidence(
@@ -202,27 +182,6 @@ class Assistant:
             intent=intent.value,
             context_pack=context_pack
         )
-
-        missing = self.action_executor.get_missing_args(intent, clean_text)
-        if missing:
-            merged_args = slot_merger.merge(
-                slots={},
-                preferences=context_pack.get("user_preferences", []),
-                allowed_keys=set(missing)
-            )
-            if merged_args:
-                self.action_executor.execute(
-                    intent,
-                    clean_text,
-                    confidence=confidence,
-                    replay_args=merged_args,
-                )
-                return
-
-            self.pending_intent = intent
-            self.missing_args = missing
-            print(f"Rudra > Please provide {', '.join(missing)}.")
-            return
 
         self.memory_manager.consider(
             role="user",
@@ -257,31 +216,56 @@ class Assistant:
                 f"{promotion_plan.action.value} | {promotion_plan.reason}"
             )
 
-            # 🔴 Day 22.6 — ASK CONSENT + STORE LTM
+            # =================================================
+            # 🔵 DAY 23.4 — CONSENT + CLASSIFY + CONFLICT RESOLUTION
+            # =================================================
             if promotion_plan.action == PromotionAction.ASK_CONSENT:
                 print(f"Rudra > {promotion_plan.consent_prompt}")
 
                 reply = (self.input.read() or "").strip().lower()
                 user_confirmed = reply in AFFIRMATIVE
 
-                logger.info(
-                    f"LTM consent response: confirmed={user_confirmed}"
+                logger.info(f"LTM consent response: confirmed={user_confirmed}")
+
+                if not user_confirmed:
+                    print(f"Rudra > Okay, I won’t remember that.")
+                    return
+
+                memory_type = self.memory_classifier.classify(clean_text)
+
+                if memory_type is None:
+                    print("Rudra > That memory is unclear. I won’t store it.")
+                    return
+
+                new_entry = self.memory_manager.store_long_term(
+                    content=clean_text,
+                    memory_type=memory_type,
+                    confidence=confidence,
+                    reason="User explicitly approved memory storage"
                 )
 
-                if user_confirmed:
-                    self.memory_manager.store_long_term(
-                        content=clean_text,
-                        memory_type=None,  # classified in Day 23
-                        confidence=confidence,
-                        reason="User explicitly approved memory storage"
+                conflict = self.memory_manager.detect_conflict(new_entry)
+
+                if conflict:
+                    print(
+                        f"Rudra > You already told me: '{conflict.content}'. "
+                        f"Do you want to replace it with '{new_entry.content}'?"
                     )
+
+                    decision = (self.input.read() or "").strip().lower()
+
+                    if decision in AFFIRMATIVE:
+                        self.memory_manager.replace_entry(conflict, new_entry)
+                        print("Rudra > Got it. I’ve updated that memory.")
+                    else:
+                        print("Rudra > Okay, I’ll keep the old one.")
 
         print(f"Rudra > {response}")
         save_message("assistant", response, intent.value)
         self.ctx.update(intent.value)
 
     def run(self):
-        logger.info("Day 22.6 — LTM storage enabled (explicit, audited)")
+        logger.info("Day 23.4 — Conflict-aware LTM enabled")
         while self.running:
             self._cycle()
 
