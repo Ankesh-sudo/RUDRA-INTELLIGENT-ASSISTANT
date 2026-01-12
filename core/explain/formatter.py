@@ -1,4 +1,6 @@
-from typing import List
+from typing import List, Optional
+
+from core.influence.output_preferences import OutputPreferences
 
 
 def format_core_trace(events: list) -> List[str]:
@@ -6,7 +8,7 @@ def format_core_trace(events: list) -> List[str]:
     Formats core (non-memory) trace events.
     Pure presentation only.
     """
-    lines = []
+    lines: List[str] = []
 
     for e in events:
         kind = e.get("kind")
@@ -25,7 +27,7 @@ def format_memory_trace(events: list) -> List[str]:
     Formats memory recall and usage traces.
     Pure presentation only.
     """
-    lines = []
+    lines: List[str] = []
 
     for e in events:
         kind = e.get("kind")
@@ -48,7 +50,7 @@ def format_influence_trace(events: list) -> List[str]:
     Formats memory influence evaluation traces.
     Pure formatter — no logic, no inference.
     """
-    lines = []
+    lines: List[str] = []
 
     for e in events:
         kind = e.get("kind")
@@ -74,7 +76,45 @@ def format_influence_trace(events: list) -> List[str]:
                     f"Memory influence evaluated: {e.get('count', 0)} signals generated"
                 )
 
+        elif kind == "output_preference_applied":
+            lines.append(
+                f"Output preference applied: {e.get('key')} = {e.get('value')} (surface: phrasing)"
+            )
+
+        elif kind == "output_preference_ignored":
+            lines.append(
+                f"Output preference ignored: {e.get('key')} ({e.get('reason')})"
+            )
+
     return lines
+
+
+def apply_output_preferences(
+    text: str,
+    output_prefs: Optional[OutputPreferences],
+) -> str:
+    """
+    Output-only preference application hook.
+    Deterministic. Safe no-op if unused.
+    """
+    if output_prefs is None or output_prefs.is_empty():
+        return text
+
+    result = text
+
+    # Verbosity (text-only, deterministic)
+    if output_prefs.verbosity == "short":
+        result = result.split(".")[0].strip() + "."
+    elif output_prefs.verbosity == "long":
+        result = result  # explicit no-op
+
+    # Format (presentation-only)
+    if output_prefs.format == "bullet":
+        result = "- " + result.replace(". ", "\n- ")
+
+    # Tone is acknowledged but intentionally inert in Day 28.2
+
+    return result
 
 
 def explain_last(trace_events: list) -> List[str]:
