@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from core.influence.output_preferences import OutputPreferences
+from core.influence.preference_scope import PreferenceScope
 
 
 # ---------- Core Formatting ----------
@@ -31,6 +32,18 @@ def format_memory_trace(events: list) -> List[str]:
             )
 
     return lines
+
+
+# ---------- Preference Scope Formatting (Day 29.1) ----------
+
+def _format_scope(scope: PreferenceScope) -> List[str]:
+    return [
+        "  Scope:",
+        f"    Applies to: {', '.join(sorted(scope.applies_to)) or '—'}",
+        f"    Contexts: {', '.join(sorted(scope.contexts)) or '—'}",
+        f"    Lifetime: {scope.lifetime}",
+        f"    Exclusions: {', '.join(sorted(scope.exclusions)) or '—'}",
+    ]
 
 
 # ---------- Influence + Preference Formatting ----------
@@ -65,7 +78,33 @@ def format_influence_trace(events: list) -> List[str]:
                     f"Memory influence evaluated: {e.get('count', 0)} signals generated"
                 )
 
-    # ---- 2. Preference resolution / consumption ----
+    # ---- 2. Preference resolution (Day 29.1 surface) ----
+    for e in events:
+        kind = e.get("kind")
+
+        if kind.startswith("preference_"):
+            preference_system_seen = True
+
+        if kind == "preference_accepted":
+            lines.append(
+                f"Preference resolved: {e.get('key')} (source: {e.get('source')}, weight: {e.get('weight')})"
+            )
+            scope = e.get("scope")
+            if scope:
+                lines.extend(_format_scope(scope))
+            lines.append("  Result: eligible (not consumed)")
+
+        elif kind == "preference_rejected":
+            lines.append(
+                f"Preference rejected: {e.get('key')} (reason: {e.get('reason')})"
+            )
+
+        elif kind == "preference_overridden":
+            lines.append(
+                f"Preference overridden: {e.get('key')} (winner: {e.get('winner')}, loser: {e.get('loser')})"
+            )
+
+    # ---- 3. Output preference consumption ----
     for e in events:
         kind = e.get("kind")
 
@@ -98,7 +137,7 @@ def format_influence_trace(events: list) -> List[str]:
         elif kind == "output_preference_session_expired":
             lines.append("Output preference usage expired at session end")
 
-    # ---- 3. Explicit no-effect summary ----
+    # ---- 4. Explicit no-effect summary ----
     if preference_system_seen and not applied_any:
         lines.append("No output preferences affected the response.")
 
