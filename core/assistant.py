@@ -23,6 +23,9 @@ from core.memory.confidence_adjuster import ConfidenceAdjuster
 from core.memory.memory_manager import MemoryManager
 from core.memory.short_term_memory import ShortTermMemory
 
+# 🔵 Day 25.1 — Memory usage mode (DEFAULT OFF)
+from core.memory.usage_mode import MemoryUsageMode
+
 # 🔵 LTM promotion + consent
 from core.memory.ltm.promotion_evaluator import (
     MemoryPromotionEvaluator,
@@ -67,6 +70,9 @@ class Assistant:
 
         self.memory_manager = MemoryManager()
         self.stm = ShortTermMemory()
+
+        # 🔒 Day 25.1 — Memory usage is OFF by default
+        self.memory_usage_mode = MemoryUsageMode.DISABLED
 
         # 🔵 Promotion evaluator
         self.memory_promotion_evaluator = MemoryPromotionEvaluator()
@@ -216,9 +222,6 @@ class Assistant:
                 f"{promotion_plan.action.value} | {promotion_plan.reason}"
             )
 
-            # =================================================
-            # 🔵 DAY 23.4 — CONSENT + CLASSIFY + CONFLICT RESOLUTION
-            # =================================================
             if promotion_plan.action == PromotionAction.ASK_CONSENT:
                 print(f"Rudra > {promotion_plan.consent_prompt}")
 
