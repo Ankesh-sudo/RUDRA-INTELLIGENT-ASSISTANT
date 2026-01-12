@@ -1,0 +1,2 @@
+class PreferenceLifecycleError(RuntimeError):
+    pass
