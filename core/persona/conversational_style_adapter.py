@@ -10,12 +10,15 @@ class ConversationalStyleAdapter:
     Meaning-preserving, non-authoritative, fail-closed.
     """
 
+    # Day 33 — controlled feminine affection markers (static, suffix-only)
     _SUFFIXES: List[str] = [
         " 🙂",
         " Boss 😊",
         " samajh gayi Boss 🙂",
         " theek hai Boss 😊",
         " bilkul samajh gayi Boss 🙂",
+        " thoda sa smile ke saath Boss 😊",
+        " calmly samajh gayi Boss 🙂",
     ]
 
     def _select_suffix(self, text: str) -> str:
