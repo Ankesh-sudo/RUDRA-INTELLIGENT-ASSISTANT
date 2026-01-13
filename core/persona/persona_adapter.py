@@ -1,71 +1,66 @@
-from datetime import datetime
-from typing import Tuple
+from typing import Optional, Dict
 
-from core.persona.persona_contract import PersonaInput
-from core.persona.persona_trace import PersonaTrace
-from core.persona.persona_guard import PersonaGuard
-from core.persona.persona_expressiveness import PersonaExpressiveness
-from core.persona.persona_toggle import PersonaToggle
+from core.persona.profile import PersonaProfile
+from core.persona.persona_lock import PersonaLock
+from core.persona.conversational_style_adapter import ConversationalStyleAdapter
 
 
 class PersonaAdapter:
     """
-    Persona adapter — Day 31.4
+    Persona Adapter — Day 36.5 (SEALED)
 
     Guarantees:
-    - Persona is optional (toggleable)
-    - Persona failure is silent
-    - Persona never blocks output
+    - Persona is cosmetic only (suffix-only)
+    - Persona has NO authority
+    - Persona is applied exactly once
+    - Persona sees ONLY final approved text
+    - Persona validation is strict
+    - Cosmetic failures never downgrade persona
+    - Persona explain schema is STABLE
     """
 
-    PERSONA_NAME = "maahi"
+    @staticmethod
+    def apply(
+        final_text: str,
+        persona: Optional[PersonaProfile],
+        explain: Optional[Dict] = None,
+    ) -> str:
 
-    @classmethod
-    def apply(cls, persona_input: PersonaInput) -> Tuple[str, PersonaTrace | None]:
-        original_text = persona_input.text
-        tone = persona_input.tone_hint or "neutral"
+        # No persona → hard bypass
+        if persona is None:
+            return final_text
 
-        # Persona OFF → hard bypass
-        if not PersonaToggle.is_enabled():
-            return original_text, None
-
+        # ---- STRICT VALIDATION (only this may fail persona) ----
         try:
-            transformed_text = PersonaExpressiveness.apply_suffix(
-                original_text,
-                tone,
-            )
-
-            # Guard 1: prefix must be preserved
-            if not PersonaGuard.is_prefix_preserved(
-                original_text,
-                transformed_text,
-            ):
-                raise ValueError("Persona prefix violation")
-
-            # Guard 2: semantic core unchanged
-            if not PersonaGuard.is_semantically_safe(
-                original_text,
-                original_text,
-            ):
-                raise ValueError("Persona semantic violation")
-
-            trace = PersonaTrace(
-                persona_name=cls.PERSONA_NAME,
-                original_text=original_text,
-                transformed_text=transformed_text,
-                tone_applied=tone,
-                timestamp=datetime.utcnow(),
-            )
-
-            return transformed_text, trace
-
+            PersonaLock.validate(persona)
         except Exception:
-            # Fail-closed fallback
-            trace = PersonaTrace(
-                persona_name=cls.PERSONA_NAME,
-                original_text=original_text,
-                transformed_text=original_text,
-                tone_applied="fallback",
-                timestamp=datetime.utcnow(),
+            if explain is not None:
+                explain["persona"] = {
+                    "name": persona.name,
+                    "version": persona.version,
+                    "fingerprint": persona.fingerprint(),
+                    "affection_tier": persona.affection_tier,
+                    "applied": False,
+                    "reason": "persona_validation_failed",
+                }
+            return final_text
+
+        # ---- COSMETIC APPLICATION (never fails persona) ----
+        try:
+            styled_text = ConversationalStyleAdapter.apply(
+                text=final_text,
+                suffixes=persona.suffixes,
             )
-            return original_text, trace
+        except Exception:
+            styled_text = final_text  # cosmetic failure ignored
+
+        if explain is not None:
+            explain["persona"] = {
+                "name": persona.name,
+                "version": persona.version,
+                "fingerprint": persona.fingerprint(),
+                "affection_tier": persona.affection_tier,
+                "applied": True,
+            }
+
+        return styled_text
