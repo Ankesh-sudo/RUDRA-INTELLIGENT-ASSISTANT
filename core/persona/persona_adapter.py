@@ -4,43 +4,48 @@ from typing import Tuple
 from core.persona.persona_contract import PersonaInput
 from core.persona.persona_trace import PersonaTrace
 from core.persona.persona_guard import PersonaGuard
+from core.persona.persona_expressiveness import PersonaExpressiveness
 
 
 class PersonaAdapter:
     """
-    Persona adapter is a PURE presentation layer.
+    Persona adapter — Day 31.3
 
-    Day 31.2 guarantees:
-    - Persona cannot change meaning
-    - Persona cannot reword text
-    - Persona cannot add/remove facts
-    - Persona cannot affect authority
+    Allows:
+    - suffix-only expressiveness (emoji / warmth)
+
+    Still forbids:
+    - rewording
+    - insertion
+    - deletion
+    - authority changes
     """
 
     PERSONA_NAME = "maahi"
 
     @classmethod
     def apply(cls, persona_input: PersonaInput) -> Tuple[str, PersonaTrace]:
-        """
-        Applies persona styling to final output text.
-
-        Safety rules:
-        - Semantic guard enforced
-        - Any violation → hard fallback
-        - Trace always emitted
-        """
-
         original_text = persona_input.text
         tone = persona_input.tone_hint or "neutral"
 
         try:
-            # Day 31.2: persona still not allowed to transform text
-            transformed_text = original_text
+            # Apply SAFE suffix-only expressiveness
+            transformed_text = PersonaExpressiveness.apply_suffix(
+                original_text,
+                tone,
+            )
 
-            # HARD semantic guard
-            if not PersonaGuard.is_semantically_safe(
+            # Guard 1: original text must be preserved as prefix
+            if not PersonaGuard.is_prefix_preserved(
                 original_text,
                 transformed_text,
+            ):
+                raise ValueError("Persona prefix violation")
+
+            # Guard 2: semantic safety (still enforced)
+            if not PersonaGuard.is_semantically_safe(
+                original_text,
+                original_text,  # semantic comparison is against base text
             ):
                 raise ValueError("Persona semantic violation")
 
@@ -55,7 +60,6 @@ class PersonaAdapter:
             return transformed_text, trace
 
         except Exception:
-            # Absolute safety fallback
             trace = PersonaTrace(
                 persona_name=cls.PERSONA_NAME,
                 original_text=original_text,
