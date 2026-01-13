@@ -4,6 +4,10 @@ from core.output.tts.tts_engine import TTSEngine
 from core.output.tts.tts_engine_noop import NoOpTTSEngine
 from core.output.tts.engines.espeak_engine import EspeakEngine
 
+# Day 41: Coqui engine is registered but NOT ACTIVE
+# Import is safe because engine is a pure stub (no audio, no models)
+from core.output.tts.engines.coqui_engine import CoquiTTSEngine
+
 
 class TTSEngineNotFound(Exception):
     """Raised when a requested TTS engine is not registered."""
@@ -13,14 +17,25 @@ class TTSEngineNotFound(Exception):
 class TTSEngineRegistry:
     """
     Explicit, deterministic TTS engine registry.
+
+    Architectural guarantees:
+    - Engines are side-effect only
+    - Default engine is NOOP
+    - No runtime audio before Day 48
+    - Coqui exists but is locked until explicitly enabled
     """
 
     _ENGINES: Dict[str, TTSEngine] = {
+        # 🔇 SAFE DEFAULTS
         "disabled": NoOpTTSEngine(),
         "noop": NoOpTTSEngine(),
 
-        # REAL VOICE (GUARANTEED, PRE–DAY 40)
+        # 🧪 LEGACY / TEST VOICE (PRE–DAY 40 ONLY)
         "kakora": EspeakEngine("hi"),
+
+        # 🟣 REAL VOICE PIPELINE (LOCKED — DAY 41)
+        # Do NOT enable before Day 48
+        "coqui": CoquiTTSEngine(),
     }
 
     @classmethod
