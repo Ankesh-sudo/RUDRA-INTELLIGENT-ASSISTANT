@@ -1,16 +1,22 @@
 # core/persona/conversational_style_adapter.py
 
-from typing import Dict
+from typing import Dict, List
+import hashlib
 
 
 class ConversationalStyleAdapter:
     """
     Applies cosmetic, suffix-only conversational style.
-    This adapter is meaning-preserving and non-authoritative.
+    Meaning-preserving and non-authoritative.
     """
 
-    def __init__(self) -> None:
-        pass
+    _SUFFIXES: List[str] = [
+        " 🙂",
+        " Boss 😊",
+        " samajh gayi Boss 🙂",
+        " theek hai Boss 😊",
+        " bilkul samajh gayi Boss 🙂",
+    ]
 
     def apply(
         self,
@@ -19,17 +25,22 @@ class ConversationalStyleAdapter:
         persona_enabled: bool,
         explain_trace: Dict,
     ) -> str:
-        """
-        Entry point for conversational styling.
+        # Persona disabled → strict no-op
+        if not persona_enabled:
+            explain_trace["persona.style_applied"] = False
+            explain_trace["persona.style_mode"] = "conversational_hindi"
+            explain_trace["persona.style_reason"] = "persona_disabled"
+            return text
 
-        Day 32.1 behavior:
-        - No-op
-        - Returns text unchanged
-        - Emits explain trace stub
-        """
+        # Deterministic suffix selection
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        index = int(digest, 16) % len(self._SUFFIXES)
+        suffix = self._SUFFIXES[index]
 
-        explain_trace["persona.style_applied"] = False
+        styled = text + suffix
+
+        explain_trace["persona.style_applied"] = True
         explain_trace["persona.style_mode"] = "conversational_hindi"
-        explain_trace["persona.style_reason"] = "not_implemented"
+        explain_trace["persona.style_suffix"] = suffix
 
-        return text
+        return styled
