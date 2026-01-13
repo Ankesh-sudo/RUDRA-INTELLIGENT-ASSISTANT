@@ -3,12 +3,18 @@ from typing import Tuple
 
 from core.persona.persona_contract import PersonaInput
 from core.persona.persona_trace import PersonaTrace
+from core.persona.persona_guard import PersonaGuard
 
 
 class PersonaAdapter:
     """
     Persona adapter is a PURE presentation layer.
-    It must never change meaning, intent, or authority.
+
+    Day 31.2 guarantees:
+    - Persona cannot change meaning
+    - Persona cannot reword text
+    - Persona cannot add/remove facts
+    - Persona cannot affect authority
     """
 
     PERSONA_NAME = "maahi"
@@ -17,35 +23,44 @@ class PersonaAdapter:
     def apply(cls, persona_input: PersonaInput) -> Tuple[str, PersonaTrace]:
         """
         Applies persona styling to final output text.
-        Safe by construction:
-        - If anything fails, fallback to original text.
+
+        Safety rules:
+        - Semantic guard enforced
+        - Any violation → hard fallback
+        - Trace always emitted
         """
 
-        original = persona_input.text
+        original_text = persona_input.text
         tone = persona_input.tone_hint or "neutral"
 
         try:
-            # Day 31.1: NO real transformation yet
-            # Just pass-through with trace
-            transformed = original
+            # Day 31.2: persona still not allowed to transform text
+            transformed_text = original_text
+
+            # HARD semantic guard
+            if not PersonaGuard.is_semantically_safe(
+                original_text,
+                transformed_text,
+            ):
+                raise ValueError("Persona semantic violation")
 
             trace = PersonaTrace(
                 persona_name=cls.PERSONA_NAME,
-                original_text=original,
-                transformed_text=transformed,
+                original_text=original_text,
+                transformed_text=transformed_text,
                 tone_applied=tone,
                 timestamp=datetime.utcnow(),
             )
 
-            return transformed, trace
+            return transformed_text, trace
 
         except Exception:
-            # Hard safety fallback
+            # Absolute safety fallback
             trace = PersonaTrace(
                 persona_name=cls.PERSONA_NAME,
-                original_text=original,
-                transformed_text=original,
+                original_text=original_text,
+                transformed_text=original_text,
                 tone_applied="fallback",
                 timestamp=datetime.utcnow(),
             )
-            return original, trace
+            return original_text, trace
