@@ -7,7 +7,7 @@ import hashlib
 class ConversationalStyleAdapter:
     """
     Applies cosmetic, suffix-only conversational style.
-    Meaning-preserving and non-authoritative.
+    Meaning-preserving, non-authoritative, fail-closed.
     """
 
     _SUFFIXES: List[str] = [
@@ -18,6 +18,28 @@ class ConversationalStyleAdapter:
         " bilkul samajh gayi Boss 🙂",
     ]
 
+    def _select_suffix(self, text: str) -> str:
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        index = int(digest, 16) % len(self._SUFFIXES)
+        return self._SUFFIXES[index]
+
+    def _guard(
+        self,
+        original: str,
+        candidate: str,
+        suffix: str,
+    ) -> bool:
+        # must be original + suffix exactly
+        if candidate != original + suffix:
+            return False
+        # exactly one suffix and whitelisted
+        if suffix not in self._SUFFIXES:
+            return False
+        # prefix must be byte-for-byte identical
+        if not candidate.startswith(original):
+            return False
+        return True
+
     def apply(
         self,
         text: str,
@@ -25,22 +47,22 @@ class ConversationalStyleAdapter:
         persona_enabled: bool,
         explain_trace: Dict,
     ) -> str:
+        explain_trace["persona.style_mode"] = "conversational_hindi"
+
         # Persona disabled → strict no-op
         if not persona_enabled:
             explain_trace["persona.style_applied"] = False
-            explain_trace["persona.style_mode"] = "conversational_hindi"
             explain_trace["persona.style_reason"] = "persona_disabled"
             return text
 
-        # Deterministic suffix selection
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        index = int(digest, 16) % len(self._SUFFIXES)
-        suffix = self._SUFFIXES[index]
+        suffix = self._select_suffix(text)
+        candidate = text + suffix
 
-        styled = text + suffix
+        if not self._guard(text, candidate, suffix):
+            explain_trace["persona.style_applied"] = False
+            explain_trace["persona.style_reason"] = "guard_violation"
+            return text
 
         explain_trace["persona.style_applied"] = True
-        explain_trace["persona.style_mode"] = "conversational_hindi"
         explain_trace["persona.style_suffix"] = suffix
-
-        return styled
+        return candidate
