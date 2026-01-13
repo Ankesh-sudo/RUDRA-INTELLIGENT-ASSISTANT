@@ -1,9 +1,8 @@
-# core/output/tts/tts_registry.py
-
 from typing import Dict
 
 from core.output.tts.tts_engine import TTSEngine
 from core.output.tts.tts_engine_noop import NoOpTTSEngine
+from core.output.tts.engines.espeak_engine import EspeakEngine
 
 
 class TTSEngineNotFound(Exception):
@@ -19,6 +18,9 @@ class TTSEngineRegistry:
     _ENGINES: Dict[str, TTSEngine] = {
         "disabled": NoOpTTSEngine(),
         "noop": NoOpTTSEngine(),
+
+        # REAL VOICE (GUARANTEED, PRE–DAY 40)
+        "kakora": EspeakEngine("hi"),
     }
 
     @classmethod

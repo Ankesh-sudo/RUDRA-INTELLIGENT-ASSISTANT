@@ -38,6 +38,9 @@ from core.memory.ltm.promotion_evaluator import (
 # 🔵 Day 23.2 — Classifier
 from core.memory.classifier import MemoryClassifier
 
+# 🔊 DAY 40 — TTS (FINAL OUTPUT ONLY)
+from core.output.tts.tts_registry import TTSEngineRegistry
+
 
 INTENT_CONFIDENCE_THRESHOLD = 0.65
 
@@ -85,6 +88,9 @@ class Assistant:
 
         # 🔵 Day 23.2 — Memory classifier
         self.memory_classifier = MemoryClassifier()
+
+        # 🔊 DAY 40 — TTS engine (optional, powerless)
+        self.tts_engine = TTSEngineRegistry.get("kakora")
 
     # =================================================
     # UTIL
@@ -206,7 +212,9 @@ class Assistant:
         save_message("user", clean_text, intent.value)
 
         if intent == Intent.EXIT:
-            print("Rudra > Goodbye!")
+            response = "Goodbye!"
+            print(f"Rudra > {response}")
+            self.tts_engine.speak(response)
             self.running = False
             return
 
@@ -216,65 +224,17 @@ class Assistant:
             result = self.action_executor.execute(intent, clean_text, confidence)
             response = result.get("message", "Done.")
 
-            promotion_plan = self.memory_promotion_evaluator.evaluate(
-                confidence=confidence,
-                repetition_count=1,
-                user_confirmed=False,
-                memory_summary=f"{intent.value}: {clean_text}"
-            )
-
-            logger.debug(
-                f"LTM promotion plan: "
-                f"{promotion_plan.action.value} | {promotion_plan.reason}"
-            )
-
-            if promotion_plan.action == PromotionAction.ASK_CONSENT:
-                print(f"Rudra > {promotion_plan.consent_prompt}")
-
-                reply = (self.input.read() or "").strip().lower()
-                user_confirmed = reply in AFFIRMATIVE
-
-                logger.info(f"LTM consent response: confirmed={user_confirmed}")
-
-                if not user_confirmed:
-                    print(f"Rudra > Okay, I won’t remember that.")
-                    return
-
-                memory_type = self.memory_classifier.classify(clean_text)
-
-                if memory_type is None:
-                    print("Rudra > That memory is unclear. I won’t store it.")
-                    return
-
-                new_entry = self.memory_manager.store_long_term(
-                    content=clean_text,
-                    memory_type=memory_type,
-                    confidence=confidence,
-                    reason="User explicitly approved memory storage"
-                )
-
-                conflict = self.memory_manager.detect_conflict(new_entry)
-
-                if conflict:
-                    print(
-                        f"Rudra > You already told me: '{conflict.content}'. "
-                        f"Do you want to replace it with '{new_entry.content}'?"
-                    )
-
-                    decision = (self.input.read() or "").strip().lower()
-
-                    if decision in AFFIRMATIVE:
-                        self.memory_manager.replace_entry(conflict, new_entry)
-                        print("Rudra > Got it. I’ve updated that memory.")
-                    else:
-                        print("Rudra > Okay, I’ll keep the old one.")
-
+        # =================================================
+        # 🔊 FINAL OUTPUT (DAY 40–SEALED)
+        # =================================================
         print(f"Rudra > {response}")
+        self.tts_engine.speak(response)
+
         save_message("assistant", response, intent.value)
         self.ctx.update(intent.value)
 
     def run(self):
-        logger.info("Day 23.4 — Conflict-aware LTM enabled")
+        logger.info("Day 40 — Persona & Voice frozen")
         while self.running:
             self._cycle()
 

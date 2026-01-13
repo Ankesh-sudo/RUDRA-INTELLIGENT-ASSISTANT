@@ -1,5 +1,5 @@
 from core.response.final_envelope import FinalResponseEnvelope
-from core.persona.persona_profile import PersonaProfile
+from core.persona.profile import PersonaProfile
 
 
 class PersonaApplier:
