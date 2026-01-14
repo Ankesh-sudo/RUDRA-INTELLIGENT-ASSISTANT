@@ -1,4 +1,4 @@
-from typing import Dict, Callable
+from typing import Dict, Callable, Union
 
 from core.output.tts.tts_engine import TTSEngine
 from core.output.tts.tts_engine_noop import NoOpTTSEngine
@@ -20,7 +20,7 @@ class TTSEngineNotFound(Exception):
 
 class TTSEngineRegistry:
     """
-    Explicit, deterministic TTS engine registry (LAZY).
+    Explicit, deterministic TTS engine registry (LAZY + TEST-SAFE).
 
     Architectural guarantees:
     - NO engine is instantiated at import time
@@ -28,9 +28,14 @@ class TTSEngineRegistry:
     - Default engine is NOOP
     - Google TTS is TEMPORARY and replaceable
     - Safe for pytest collection without credentials
+    - Supports test injection of engine instances
     """
 
-    _ENGINES: Dict[str, Callable[[], TTSEngine]] = {
+    # NOTE:
+    # Values may be:
+    #   - Callable[[], TTSEngine]  (production)
+    #   - TTSEngine instance       (tests / monkeypatching)
+    _ENGINES: Dict[str, Union[Callable[[], TTSEngine], TTSEngine]] = {
         # 🔇 SAFE DEFAULTS
         "disabled": lambda: NoOpTTSEngine(),
         "noop": lambda: NoOpTTSEngine(),
@@ -39,11 +44,9 @@ class TTSEngineRegistry:
         "kakora": lambda: EspeakEngine("hi"),
 
         # 🟣 REAL VOICE PIPELINE (LOCKED — DAY 41)
-        # Must remain inactive unless explicitly used
         "coqui": lambda: CoquiTTSEngine(),
 
         # 🔵 TEMPORARY PRODUCTION (GOOGLE CLOUD TTS)
-        # Client is created ONLY when engine is requested
         "google_hi_male": lambda: GoogleTTSEngine(
             language_code="hi-IN",
             voice_name="hi-IN-Standard-B",
@@ -59,10 +62,15 @@ class TTSEngineRegistry:
         if not isinstance(name, str):
             raise TTSEngineNotFound("Engine name must be a string")
 
-        factory = cls._ENGINES.get(name)
+        entry = cls._ENGINES.get(name)
 
-        if factory is None:
+        if entry is None:
             raise TTSEngineNotFound(f"TTS engine not found: {name}")
 
-        # Engine is instantiated HERE — never earlier
-        return factory()
+        # ✅ SUPPORT BOTH:
+        # - Lazy factories (callable)
+        # - Direct engine instances (tests)
+        if callable(entry):
+            return entry()
+
+        return entry
