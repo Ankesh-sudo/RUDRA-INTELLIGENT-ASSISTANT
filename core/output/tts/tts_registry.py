@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Callable
 
 from core.output.tts.tts_engine import TTSEngine
 from core.output.tts.tts_engine_noop import NoOpTTSEngine
@@ -9,7 +9,7 @@ from core.output.tts.engines.espeak_engine import EspeakEngine
 from core.output.tts.engines.coqui_engine import CoquiTTSEngine
 
 # Day 41: Google Cloud TTS (TEMPORARY PRODUCTION BACKEND)
-# Cloud-based, final-text-only, side-effect adapter
+# IMPORTANT: Engine must NOT initialize at import time
 from core.output.tts.engines.google_tts_engine import GoogleTTSEngine
 
 
@@ -20,35 +20,35 @@ class TTSEngineNotFound(Exception):
 
 class TTSEngineRegistry:
     """
-    Explicit, deterministic TTS engine registry.
+    Explicit, deterministic TTS engine registry (LAZY).
 
     Architectural guarantees:
+    - NO engine is instantiated at import time
     - Engines are side-effect only
     - Default engine is NOOP
-    - No runtime audio before Day 48 (unless explicitly configured)
-    - Coqui exists but is locked until explicitly enabled
     - Google TTS is TEMPORARY and replaceable
+    - Safe for pytest collection without credentials
     """
 
-    _ENGINES: Dict[str, TTSEngine] = {
+    _ENGINES: Dict[str, Callable[[], TTSEngine]] = {
         # 🔇 SAFE DEFAULTS
-        "disabled": NoOpTTSEngine(),
-        "noop": NoOpTTSEngine(),
+        "disabled": lambda: NoOpTTSEngine(),
+        "noop": lambda: NoOpTTSEngine(),
 
-        # 🧪 LEGACY / TEST VOICE (PRE–DAY 40 ONLY)
-        "kakora": EspeakEngine("hi"),
+        # 🧪 LEGACY / TEST VOICE
+        "kakora": lambda: EspeakEngine("hi"),
 
         # 🟣 REAL VOICE PIPELINE (LOCKED — DAY 41)
-        # Do NOT enable before Day 48
-        "coqui": CoquiTTSEngine(),
+        # Must remain inactive unless explicitly used
+        "coqui": lambda: CoquiTTSEngine(),
 
         # 🔵 TEMPORARY PRODUCTION (GOOGLE CLOUD TTS)
-        # Safe, final-text-only, no logic influence
-        "google_hi_male": GoogleTTSEngine(
+        # Client is created ONLY when engine is requested
+        "google_hi_male": lambda: GoogleTTSEngine(
             language_code="hi-IN",
             voice_name="hi-IN-Standard-B",
         ),
-        "google_hi_female": GoogleTTSEngine(
+        "google_hi_female": lambda: GoogleTTSEngine(
             language_code="hi-IN",
             voice_name="hi-IN-Standard-A",
         ),
@@ -59,9 +59,10 @@ class TTSEngineRegistry:
         if not isinstance(name, str):
             raise TTSEngineNotFound("Engine name must be a string")
 
-        engine = cls._ENGINES.get(name)
+        factory = cls._ENGINES.get(name)
 
-        if engine is None:
+        if factory is None:
             raise TTSEngineNotFound(f"TTS engine not found: {name}")
 
-        return engine
+        # Engine is instantiated HERE — never earlier
+        return factory()
