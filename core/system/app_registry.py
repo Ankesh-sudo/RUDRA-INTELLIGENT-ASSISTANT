@@ -1,29 +1,48 @@
-from loguru import logger
-from core.system.executor import SystemExecutor
+"""
+App Registry
+Day 51 — Alias & executable resolution ONLY.
 
+Responsibilities:
+- Map user-friendly names → OS executables
+- NO execution
+- NO subprocess
+- NO permissions
+"""
 
 class AppRegistry:
-    def __init__(self):
-        self.executor = SystemExecutor()
-        self._actions = {
-            "browser": self.executor.open_browser,
-            "terminal": self.executor.open_terminal,
-            "file_manager": self.executor.open_file_manager,
-            "calculator": lambda: self._run("gnome-calculator"),
-            "vscode": lambda: self._run("code"),
-        }
+    # Canonical alias table (Linux-first)
+    _ALIASES = {
+        # Browsers
+        "chrome": "google-chrome",
+        "google chrome": "google-chrome",
+        "chromium": "chromium",
+        "firefox": "firefox",
 
-    def _run(self, cmd: str) -> bool:
-        try:
-            import subprocess
-            subprocess.Popen([cmd])
-            return True
-        except Exception as e:
-            logger.error("Failed to run {}: {}", cmd, e)
-            return False
+        # Editors / IDEs
+        "vscode": "code",
+        "vs code": "code",
+        "code": "code",
 
-    def execute(self, app_name: str) -> bool:
-        action = self._actions.get(app_name)
-        if not action:
-            return False
-        return bool(action())
+        # System tools
+        "terminal": "gnome-terminal",
+        "cmd": "gnome-terminal",
+        "file manager": "nautilus",
+        "files": "nautilus",
+        "calculator": "gnome-calculator",
+    }
+
+    @classmethod
+    def resolve(cls, app_name: str) -> str:
+        """
+        Resolve a user-facing app name to a real executable.
+
+        Returns:
+        - resolved executable string
+        - or original name if unknown
+        """
+
+        if not app_name:
+            return app_name
+
+        key = app_name.strip().lower()
+        return cls._ALIASES.get(key, key)

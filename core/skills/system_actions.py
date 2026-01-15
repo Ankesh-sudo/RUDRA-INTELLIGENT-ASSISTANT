@@ -4,12 +4,14 @@ import platform
 import logging
 from typing import Dict, Any
 
+from core.system.app_registry import AppRegistry
+
 logger = logging.getLogger(__name__)
 
 
 class SystemActions:
     """
-    Day 50 — OS Adapter Layer
+    OS Adapter Layer
     - NO permissions
     - NO intent logic
     - NO policy decisions
@@ -23,28 +25,31 @@ class SystemActions:
         self.last_args = None
 
     # =====================================================
-    # 🟦 DAY 50 — OPEN APP (PRIMARY)
+    # 🟦 OPEN APP (Day 50 + Day 51 alias resolution)
     # =====================================================
     def open_app(self, app_name: str, target: str = None) -> Dict[str, Any]:
         try:
             if not app_name:
                 return {"success": False, "message": "No app name provided"}
 
+            # 🔹 Day 51: resolve alias → executable
+            executable = AppRegistry.resolve(app_name)
+
             if self.system == "Linux":
-                subprocess.Popen([app_name.lower()])
+                subprocess.Popen([executable])
 
             elif self.system == "Windows":
-                subprocess.Popen([app_name], shell=True)
+                subprocess.Popen([executable], shell=True)
 
             elif self.system == "Darwin":
-                subprocess.Popen(["open", "-a", app_name])
+                subprocess.Popen(["open", "-a", executable])
 
-            self._store_last("open_app", {"app_name": app_name})
+            self._store_last("open_app", {"app_name": executable})
 
             return {
                 "success": True,
                 "message": f"Opening {app_name}",
-                "app": app_name,
+                "executable": executable,
             }
 
         except Exception as e:
@@ -55,7 +60,7 @@ class SystemActions:
             }
 
     # =====================================================
-    # 🟦 DAY 50 — SYSTEM INFO (READ-ONLY)
+    # 🟦 SYSTEM INFO (READ-ONLY)
     # =====================================================
     def system_info(self) -> Dict[str, Any]:
         try:
@@ -160,7 +165,7 @@ class SystemActions:
 
 
 # =========================================================
-# 🟦 DAY 50 — SKILL ENTRY POINTS (FUNCTION WRAPPERS)
+# 🟦 SKILL ENTRY POINT (FUNCTION WRAPPER)
 # =========================================================
 
 _system_actions = SystemActions()
