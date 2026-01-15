@@ -157,3 +157,27 @@ class SystemActions:
 
     def get_last_action(self):
         return self.last_action, self.last_args
+
+
+# =========================================================
+# 🟦 DAY 50 — SKILL ENTRY POINTS (FUNCTION WRAPPERS)
+# =========================================================
+
+_system_actions = SystemActions()
+
+
+def open_app(args: Dict[str, Any]):
+    """
+    Canonical system skill entry point for OPEN_APP.
+
+    Expected args:
+    {
+        "app_name": "chrome"
+    }
+    """
+    app_name = args.get("app_name")
+
+    if not app_name:
+        return {"success": False, "message": "Missing app_name"}
+
+    return _system_actions.open_app(app_name=app_name)
