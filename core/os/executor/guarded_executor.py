@@ -7,6 +7,10 @@ from core.os.explain.explain_surface import ExplainSurface
 from core.os.permission.consent_store import ConsentStore
 from core.os.permission.permission_evaluator import PermissionEvaluator
 
+# Day 50: Linux live backends (LOW RISK ONLY)
+from core.os.linux.app_control import AppControl
+from core.os.linux.system_info import SystemInfo
+
 
 @dataclass(frozen=True)
 class ExecutionPlan:
@@ -16,22 +20,22 @@ class ExecutionPlan:
     risk_level: str
     required_scopes: Set[str]
     explanation: Dict[str, Any]
-    dry_run: bool = True
+    dry_run: bool
 
 
 class GuardedExecutor(ExecutorContract):
     """
     Central authority gate for OS actions.
 
-    Day 49:
+    Day 50:
     - Permission enforced
     - Consent gated
-    - Dry-run only
+    - LOW-RISK real execution enabled
     - Persona completely blocked
     """
 
     def __init__(self):
-        self._backend = DryRunBackend()
+        self._backend = DryRunBackend()  # still used for denied / confirm paths
         self._consent_store = ConsentStore()
         self._permission_evaluator = PermissionEvaluator(self._consent_store)
 
@@ -77,8 +81,23 @@ class GuardedExecutor(ExecutorContract):
                 dry_run=True,
             )
 
-        # 5. Permission granted → still dry-run only
-        self._backend.run()
+        # 5. Permission granted → controlled live execution (LOW RISK ONLY)
+        result = None
+
+        if action_spec.action_type == "OPEN_APP":
+            result = AppControl.open_app(
+                action_spec.parameters["app_name"]
+            )
+
+        elif action_spec.action_type == "SYSTEM_INFO":
+            result = SystemInfo.uname()
+
+        else:
+            # Any non-whitelisted action is still blocked
+            result = {
+                "ok": False,
+                "error": "Action not enabled for live execution",
+            }
 
         return ExecutionPlan(
             action_type=action_spec.action_type,
@@ -89,6 +108,7 @@ class GuardedExecutor(ExecutorContract):
             explanation={
                 **explanation,
                 "permission": "GRANTED",
+                "result": result,
             },
-            dry_run=True,
+            dry_run=False,
         )

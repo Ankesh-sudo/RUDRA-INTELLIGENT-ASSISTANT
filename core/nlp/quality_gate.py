@@ -1,22 +1,31 @@
 SYSTEM_WORDS = {"exit", "quit", "help", "repeat", "again"}
+
 STOPWORDS = {
     "the", "is", "am", "are", "was", "were",
     "to", "of", "and", "a", "an"
 }
+
 def is_input_valid(text: str) -> bool:
+    """
+    Day 50 – Voice-safe quality gate
+    - Allows single-word slot replies (e.g. 'chrome')
+    - Blocks empty / noise
+    """
+
     if not text:
         return False
 
-    words = text.split()
+    words = text.lower().split()
 
-    # allow system commands
+    # system commands
     if len(words) == 1 and words[0] in SYSTEM_WORDS:
         return True
 
-    if len(words) < 2:
-        return False
+    # 🔑 allow single-word slot answers
+    if len(words) == 1:
+        return True
 
-    if len(text) < 5:
+    if len(text) < 3:
         return False
 
     meaningful = [w for w in words if w not in STOPWORDS]

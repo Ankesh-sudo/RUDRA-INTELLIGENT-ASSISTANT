@@ -186,8 +186,12 @@ class Assistant:
 
         wm.set_intent(intent.value, confidence)
 
+        # ✅ FINAL FIX — correct FollowUpResolver API usage
         if confidence < INTENT_CONFIDENCE_THRESHOLD or intent == Intent.UNKNOWN:
-            resolved = follow_up_resolver.resolve(tokens, context_pack)
+            resolved = follow_up_resolver.resolve(
+                tokens=tokens,
+                context_pack=context_pack
+            )
             if resolved:
                 intent = Intent(resolved["resolved_intent"])
                 confidence = 0.7

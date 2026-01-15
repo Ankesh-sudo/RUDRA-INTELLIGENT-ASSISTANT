@@ -1,4 +1,3 @@
-import webbrowser
 import os
 import subprocess
 import platform
@@ -9,38 +8,83 @@ logger = logging.getLogger(__name__)
 
 
 class SystemActions:
+    """
+    Day 50 — OS Adapter Layer
+    - NO permissions
+    - NO intent logic
+    - NO policy decisions
+    - Pure side-effect executors
+    """
+
     def __init__(self, config=None):
         self.config = config
         self.system = platform.system()
         self.last_action = None
         self.last_args = None
 
-    # ---------- BROWSER ----------
-
-    def open_browser(self, url: str = None, target: str = None) -> Dict[str, Any]:
+    # =====================================================
+    # 🟦 DAY 50 — OPEN APP (PRIMARY)
+    # =====================================================
+    def open_app(self, app_name: str, target: str = None) -> Dict[str, Any]:
         try:
-            if not url:
-                url = "https://google.com"
+            if not app_name:
+                return {"success": False, "message": "No app name provided"}
 
-            webbrowser.open(url)
+            if self.system == "Linux":
+                subprocess.Popen([app_name.lower()])
 
-            self._store_last("open_browser", {"url": url, "target": target})
+            elif self.system == "Windows":
+                subprocess.Popen([app_name], shell=True)
+
+            elif self.system == "Darwin":
+                subprocess.Popen(["open", "-a", app_name])
+
+            self._store_last("open_app", {"app_name": app_name})
 
             return {
                 "success": True,
-                "message": f"Opening {target or url}",
-                "url": url
+                "message": f"Opening {app_name}",
+                "app": app_name,
             }
 
         except Exception as e:
             logger.error(e)
             return {
                 "success": False,
-                "message": "Failed to open browser"
+                "message": f"Failed to open {app_name}",
             }
 
-    # ---------- TERMINAL ----------
+    # =====================================================
+    # 🟦 DAY 50 — SYSTEM INFO (READ-ONLY)
+    # =====================================================
+    def system_info(self) -> Dict[str, Any]:
+        try:
+            info = {
+                "system": platform.system(),
+                "release": platform.release(),
+                "version": platform.version(),
+                "machine": platform.machine(),
+                "processor": platform.processor(),
+            }
 
+            self._store_last("system_info", {})
+
+            return {
+                "success": True,
+                "message": "System information retrieved",
+                "info": info,
+            }
+
+        except Exception as e:
+            logger.error(e)
+            return {
+                "success": False,
+                "message": "Failed to retrieve system info",
+            }
+
+    # =====================================================
+    # LEGACY HELPERS (SAFE / NON-CRITICAL)
+    # =====================================================
     def open_terminal(self, command: str = None, target: str = None) -> Dict[str, Any]:
         try:
             if self.system == "Linux":
@@ -59,20 +103,11 @@ class SystemActions:
 
             self._store_last("open_terminal", {"command": command})
 
-            return {
-                "success": True,
-                "message": "Terminal opened",
-                "command": command
-            }
+            return {"success": True, "message": "Terminal opened"}
 
         except Exception as e:
             logger.error(e)
-            return {
-                "success": False,
-                "message": "Failed to open terminal"
-            }
-
-    # ---------- FILE MANAGER ----------
+            return {"success": False, "message": "Failed to open terminal"}
 
     def open_file_manager(self, path: str = None, target: str = None) -> Dict[str, Any]:
         try:
@@ -88,89 +123,11 @@ class SystemActions:
 
             self._store_last("open_file_manager", {"path": path})
 
-            return {
-                "success": True,
-                "message": f"Opening {target or path}",
-                "path": path
-            }
+            return {"success": True, "message": f"Opening {path}"}
 
         except Exception as e:
             logger.error(e)
-            return {
-                "success": False,
-                "message": "Failed to open file manager"
-            }
-
-    # ---------- SEARCH ----------
-
-    def search_web(self, query: str = None, target: str = None) -> Dict[str, Any]:
-        try:
-            if not query:
-                return {
-                    "success": False,
-                    "message": "What should I search for?"
-                }
-
-            url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-            webbrowser.open(url)
-
-            self._store_last("search_web", {"query": query})
-
-            return {
-                "success": True,
-                "message": f"Searching for {query}",
-                "url": url
-            }
-
-        except Exception as e:
-            logger.error(e)
-            return {
-                "success": False,
-                "message": "Search failed"
-            }
-
-    # ---------- FILE OPEN ----------
-
-    def open_file(self, filename: str = None, full_path: str = None, target: str = None) -> Dict[str, Any]:
-        try:
-            path = full_path
-
-            if not path and filename:
-                for base in ["~/Downloads", "~/Desktop", "~/Documents"]:
-                    test = os.path.expanduser(f"{base}/{filename}")
-                    if os.path.exists(test):
-                        path = test
-                        break
-
-            if not path:
-                return {
-                    "success": False,
-                    "message": "File not found"
-                }
-
-            if self.system == "Linux":
-                subprocess.Popen(["xdg-open", path])
-            elif self.system == "Windows":
-                os.startfile(path)
-            elif self.system == "Darwin":
-                subprocess.Popen(["open", path])
-
-            self._store_last("open_file", {"path": path})
-
-            return {
-                "success": True,
-                "message": f"Opening {os.path.basename(path)}",
-                "path": path
-            }
-
-        except Exception as e:
-            logger.error(e)
-            return {
-                "success": False,
-                "message": "Failed to open file"
-            }
-
-    # ---------- LIST FILES ----------
+            return {"success": False, "message": "Failed to open file manager"}
 
     def list_files(self, path: str = None, target: str = None) -> Dict[str, Any]:
         try:
@@ -184,18 +141,16 @@ class SystemActions:
             return {
                 "success": True,
                 "message": f"Files in {path}",
-                "files": files
+                "files": files,
             }
 
         except Exception as e:
             logger.error(e)
-            return {
-                "success": False,
-                "message": "Failed to list files"
-            }
+            return {"success": False, "message": "Failed to list files"}
 
-    # ---------- CONTEXT ----------
-
+    # =====================================================
+    # CONTEXT
+    # =====================================================
     def _store_last(self, action: str, args: Dict[str, Any]):
         self.last_action = action
         self.last_args = args

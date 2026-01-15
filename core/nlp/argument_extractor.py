@@ -64,6 +64,18 @@ class ArgumentExtractor:
             'command': None
         }
 
+        # ---------------- DAY 50: TEMP OPEN_APP ----------------
+        if intent == "OPEN_APP":
+            words = text_lower.split()
+            for i, w in enumerate(words):
+                if w in ("open", "launch", "start") and i + 1 < len(words):
+                    return {
+                        "app_name": words[i + 1],
+                        "target": "application"
+                    }
+            return args
+
+        # ---------------- EXISTING INTENTS ----------------
         if intent == "OPEN_BROWSER":
             return self._extract_browser_args(text_lower)
 

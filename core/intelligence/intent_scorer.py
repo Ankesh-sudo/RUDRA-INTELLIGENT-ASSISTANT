@@ -1,59 +1,62 @@
 from typing import Dict, List
 from core.nlp.intent import Intent
 
-
 # -------------------------------------------------
-# Day 14.4 — Verb aliases (kept)
+# Verb aliases (Day 50 – FINAL)
 # -------------------------------------------------
 VERB_ALIASES: Dict[str, Intent] = {
-    # Search intent
+    # App / OS control
+    "open": Intent.OPEN_APP,
+    "launch": Intent.OPEN_APP,
+    "start": Intent.OPEN_APP,
+    "run": Intent.OPEN_APP,
+
+    # Search
     "search": Intent.SEARCH_WEB,
     "find": Intent.SEARCH_WEB,
     "lookup": Intent.SEARCH_WEB,
-    "look": Intent.SEARCH_WEB,
-
-    # Open intent (generic)
-    "open": Intent.OPEN_BROWSER,
-    "launch": Intent.OPEN_BROWSER,
-    "start": Intent.OPEN_BROWSER,
 }
 
-
 # -------------------------------------------------
-# Day 15.1 — HARD INTENT GUARDS (CRITICAL)
+# HARD GUARDS (authoritative overrides)
 # -------------------------------------------------
 HARD_GUARDS: Dict[str, Intent] = {
-    # Terminal must never be browser
+    # Terminal must never be treated as browser/app
     "terminal": Intent.OPEN_TERMINAL,
     "console": Intent.OPEN_TERMINAL,
     "shell": Intent.OPEN_TERMINAL,
 
-    # File operations
-    "file": Intent.OPEN_FILE,
+    # System info
+    "system": Intent.SYSTEM_INFO,
+    "info": Intent.SYSTEM_INFO,
 
-    # Listing intent
+    # Listing
     "list": Intent.LIST_FILES,
+    "files": Intent.LIST_FILES,
 }
 
-
 # -------------------------------------------------
-# Day 15.2 — INTENT PRIORITY (TIE-BREAKER)
+# INTENT PRIORITY (tie-breaker)
 # -------------------------------------------------
 INTENT_PRIORITY: Dict[Intent, int] = {
-    Intent.OPEN_TERMINAL: 5,
+    Intent.OPEN_TERMINAL: 6,      # highest risk
+    Intent.OPEN_APP: 5,
+    Intent.SYSTEM_INFO: 5,
+
     Intent.OPEN_FILE: 4,
     Intent.LIST_FILES: 4,
     Intent.OPEN_FILE_MANAGER: 3,
+
     Intent.SEARCH_WEB: 3,
     Intent.OPEN_BROWSER: 2,
+
     Intent.GREETING: 1,
     Intent.HELP: 1,
     Intent.EXIT: 1,
 }
 
-
 # -------------------------------------------------
-# Keyword evidence per intent
+# KEYWORD EVIDENCE
 # -------------------------------------------------
 INTENT_KEYWORDS: Dict[Intent, List[str]] = {
     # Core
@@ -61,137 +64,65 @@ INTENT_KEYWORDS: Dict[Intent, List[str]] = {
     Intent.HELP: ["help", "commands"],
     Intent.EXIT: ["exit", "quit", "bye"],
 
-    # Notes
-    Intent.NOTE_CREATE: ["note", "save", "write", "take"],
-    Intent.NOTE_READ: ["read", "show"],
-
-    # --------------------
-    # System actions
-    # --------------------
-    Intent.OPEN_BROWSER: [
-        "browser",
-        "chrome",
-        "firefox",
-        "internet",
-        "youtube",
-        "google",
-        "github",
-        "website",
-        "site",
+    # System info
+    Intent.SYSTEM_INFO: [
+        "system", "info", "details", "status"
     ],
 
-    Intent.OPEN_TERMINAL: [
-        "terminal",
-        "console",
-        "shell",
+    # Open app (apps + verbs)
+    Intent.OPEN_APP: [
+        "open", "launch", "start", "run",
+        "chrome", "firefox", "github", "youtube",
+        "calculator", "terminal"
     ],
 
-    Intent.OPEN_FILE_MANAGER: [
-        "folder",
-        "directory",
-        "downloads",
-        "download",
-        "desktop",
-        "documents",
-    ],
-
-    Intent.OPEN_FILE: [
-        "file",
-    ],
-
-    Intent.LIST_FILES: [
-        "list",
-        "files",
-    ],
-
+    # Search
     Intent.SEARCH_WEB: [
-        "search",
-        "find",
-        "lookup",
-        "query",
+        "search", "find", "lookup", "query"
+    ],
+
+    # Files
+    Intent.LIST_FILES: [
+        "list", "files"
     ],
 }
 
-
+# -------------------------------------------------
+# SCORING
+# -------------------------------------------------
 def score_intents(tokens: List[str]) -> Dict[Intent, int]:
-    """
-    Day 15 scoring pipeline:
-    1. Hard guards
-    2. Keyword matches
-    3. Verb alias boost
-    4. Action boost (restricted)
-    """
     scores: Dict[Intent, int] = {i: 0 for i in Intent}
 
-    # -------------------------------------------------
-    # 1️⃣ HARD GUARDS (highest impact)
-    # -------------------------------------------------
-    for token in tokens:
-        if token in HARD_GUARDS:
-            scores[HARD_GUARDS[token]] += 3
+    # 1) Hard guards (highest impact)
+    for t in tokens:
+        if t in HARD_GUARDS:
+            scores[HARD_GUARDS[t]] += 3
 
-    # -------------------------------------------------
-    # 2️⃣ Keyword matching
-    # -------------------------------------------------
+    # 2) Keyword evidence
     for intent, keywords in INTENT_KEYWORDS.items():
-        for token in tokens:
-            if token in keywords:
+        for t in tokens:
+            if t in keywords:
                 scores[intent] += 1
 
-    # -------------------------------------------------
-    # 3️⃣ Verb alias boosting
-    # -------------------------------------------------
-    for token in tokens:
-        alias_intent = VERB_ALIASES.get(token)
-        if alias_intent:
-            scores[alias_intent] += 1
-
-    # -------------------------------------------------
-    # 4️⃣ Action verb boost (RESTRICTED)
-    # -------------------------------------------------
-    if "open" in tokens or "launch" in tokens or "start" in tokens:
-        for intent in (
-            Intent.OPEN_TERMINAL,
-            Intent.OPEN_FILE,
-            Intent.OPEN_FILE_MANAGER,
-            Intent.OPEN_BROWSER,
-        ):
-            if scores[intent] > 0:
-                scores[intent] += 1
+    # 3) Verb aliases
+    for t in tokens:
+        if t in VERB_ALIASES:
+            scores[VERB_ALIASES[t]] += 1
 
     return scores
 
 
 def pick_best_intent(scores: Dict[Intent, int], tokens: List[str]):
-    """
-    Day 15 intent selection with priority tie-breaking
-    and calibrated confidence.
-    """
-    if not scores:
-        return Intent.UNKNOWN, 0.0
-
-    best_score = max(scores.values())
+    best_score = max(scores.values(), default=0)
     if best_score == 0:
         return Intent.UNKNOWN, 0.0
 
-    # All intents with same top score
     candidates = [i for i, s in scores.items() if s == best_score]
+    best_intent = max(candidates, key=lambda i: INTENT_PRIORITY.get(i, 0))
 
-    # -------------------------------------------------
-    # Day 15.2 — Priority-based tie break
-    # -------------------------------------------------
-    best_intent = max(
-        candidates,
-        key=lambda i: INTENT_PRIORITY.get(i, 0)
-    )
-
-    # EXIT is always confident
     if best_intent == Intent.EXIT:
-        return Intent.EXIT, 1.0
+        return best_intent, 1.0
 
-    # -------------------------------------------------
-    # Day 15.3 — Confidence recalibration
-    # -------------------------------------------------
     confidence = min(
         1.0,
         (best_score + INTENT_PRIORITY.get(best_intent, 0)) / (len(tokens) + 2)
