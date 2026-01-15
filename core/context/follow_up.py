@@ -1,14 +1,11 @@
 """
-Follow-up Context Manager — INTENT ISOLATED + REPLAY SAFE (Day 15.4 FINAL)
+Follow-up Context Manager — INTENT ISOLATED + REPLAY SAFE
+Day 15.4 FINAL + Day 53 Slot Completion Extension
 
-Fixes:
-✔ Correct filesystem → filesystem replay
-✔ Correct cross-intent blocking
-✔ Replay rate limiting
-✔ Follow-up TTL hardening
-✔ Intent-isolated entity replay
-
-Fully aligned with test_day15_all_edge_cases.py
+Day 53 adds:
+✔ PendingAction slot filling
+✔ yes / no handling for pending actions
+✔ NO regression to replay safety
 """
 
 import re
@@ -16,6 +13,12 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
 from enum import Enum
 
+from core.context.pending_action import PendingAction
+
+
+# ==========================================================
+# REFERENCE TYPES
+# ==========================================================
 
 class ReferenceType(Enum):
     PRONOUN = "pronoun"
@@ -25,9 +28,10 @@ class ReferenceType(Enum):
     DEMONSTRATIVE = "demonstrative"
 
 
-# ------------------------------------------------------------------
+# ==========================================================
 # INTENT → ALLOWED ENTITY KEYS (STRICT)
-# ------------------------------------------------------------------
+# ==========================================================
+
 INTENT_ENTITY_WHITELIST: Dict[str, List[str]] = {
     "open_browser": ["url", "target"],
     "search_web": ["query", "target"],
@@ -38,9 +42,10 @@ INTENT_ENTITY_WHITELIST: Dict[str, List[str]] = {
 }
 
 
-# ------------------------------------------------------------------
+# ==========================================================
 # INTENT → INTENT CLASS
-# ------------------------------------------------------------------
+# ==========================================================
+
 INTENT_CLASS: Dict[str, str] = {
     "open_browser": "system",
     "search_web": "system",
@@ -51,10 +56,18 @@ INTENT_CLASS: Dict[str, str] = {
 }
 
 
+# ==========================================================
+# FOLLOW-UP CONTEXT
+# ==========================================================
+
 class FollowUpContext:
     """
-    Intent-isolated follow-up context with replay hardening (Day 15.4)
+    Intent-isolated follow-up context with replay hardening.
+    Day 53 adds PendingAction resolution (SAFE).
     """
+
+    YES = {"yes", "yeah", "yep", "ok", "okay", "sure"}
+    NO = {"no", "nope", "cancel", "stop"}
 
     def __init__(
         self,
@@ -71,6 +84,9 @@ class FollowUpContext:
         self.max_replays = max_replays
         self.replay_window = replay_window
 
+        # 🟦 Day 53 — pending action (slot filling)
+        self.pending_action: Optional[PendingAction] = None
+
         self.reference_patterns = {
             ReferenceType.PRONOUN: re.compile(r"\b(it|that|this|them)\b", re.IGNORECASE),
             ReferenceType.LOCATION: re.compile(r"\b(there|here)\b", re.IGNORECASE),
@@ -82,9 +98,55 @@ class FollowUpContext:
             ),
         }
 
-    # ------------------------------------------------------------------
-    # CONTEXT STORAGE
-    # ------------------------------------------------------------------
+    # ======================================================
+    # 🟦 DAY 53 — PENDING ACTION HANDLING (NEW)
+    # ======================================================
+
+    def resolve_pending_action(self, text: str) -> Optional[PendingAction]:
+        """
+        Handles follow-ups like:
+        - "chrome"
+        - "yes"
+        - "no"
+        ONLY if a PendingAction exists.
+        """
+
+        if not self.pending_action or not self.pending_action.is_active():
+            return None
+
+        reply = text.lower().strip()
+
+        # ❌ Cancel
+        if reply in self.NO:
+            self.pending_action.clear()
+            self.pending_action = None
+            return None
+
+        # ✅ Confirmation only
+        if reply in self.YES:
+            return self.pending_action
+
+        # 🧩 Single-slot completion
+        if len(self.pending_action.missing_fields) == 1:
+            field = next(iter(self.pending_action.missing_fields))
+            self.pending_action.fill(field, reply)
+
+            if self.pending_action.is_complete():
+                completed = self.pending_action
+                self.pending_action = None
+                return completed
+
+        return None
+
+    def set_pending_action(self, pending: PendingAction):
+        """
+        Called by orchestrator when args are missing.
+        """
+        self.pending_action = pending
+
+    # ======================================================
+    # CONTEXT STORAGE (UNCHANGED)
+    # ======================================================
 
     def add_context(
         self,
@@ -117,9 +179,9 @@ class FollowUpContext:
         self._cleanup_old_contexts()
         return context
 
-    # ------------------------------------------------------------------
-    # CONTEXT RESOLUTION (DAY 15.4 FINAL)
-    # ------------------------------------------------------------------
+    # ======================================================
+    # CONTEXT RESOLUTION (DAY 15.4 — UNCHANGED)
+    # ======================================================
 
     def resolve_reference(self, text: str) -> Tuple[Optional[Dict[str, Any]], str]:
         self._cleanup_old_contexts()
@@ -129,42 +191,32 @@ class FollowUpContext:
 
         text_lower = text.lower().strip()
 
-        # Must contain a reference word
         if not any(p.search(text_lower) for p in self.reference_patterns.values()):
             return None, "no_reference"
 
         candidate = self.contexts[0]
 
-        # --------------------------------------------------
-        # 🔒 Cross-intent replay blocking
-        # --------------------------------------------------
         inferred_class = self._infer_intent_class_from_text(text_lower)
         stored_class = candidate.get("intent_class")
 
         if inferred_class and stored_class and inferred_class != stored_class:
             return None, "cross_intent_blocked"
 
-        # --------------------------------------------------
-        # 🔒 ACTION MISMATCH BLOCK (ENTITY LEAK PREVENTION)
-        # --------------------------------------------------
         stored_action = candidate.get("action")
         if stored_action:
-            expected_verb = stored_action.split("_")[0]  # open / list / search
+            expected_verb = stored_action.split("_")[0]
             if not text_lower.startswith(expected_verb):
                 return None, "action_mismatch"
 
-        # --------------------------------------------------
-        # 🔒 Replay rate limiting
-        # --------------------------------------------------
         if not self._is_replay_allowed(candidate):
             return None, "replay_limited"
 
         self._mark_replay(candidate)
         return candidate, "resolved"
 
-    # ------------------------------------------------------------------
-    # REPLAY CONTROL
-    # ------------------------------------------------------------------
+    # ======================================================
+    # REPLAY CONTROL (UNCHANGED)
+    # ======================================================
 
     def _is_replay_allowed(self, context: Dict[str, Any]) -> bool:
         if context["replay_count"] >= self.max_replays:
@@ -180,9 +232,9 @@ class FollowUpContext:
         context["replay_count"] += 1
         context["last_replay"] = datetime.now()
 
-    # ------------------------------------------------------------------
-    # ENTITY FILTERING
-    # ------------------------------------------------------------------
+    # ======================================================
+    # ENTITY FILTERING (UNCHANGED)
+    # ======================================================
 
     def _filter_entities_by_intent(
         self, intent: str, entities: Dict[str, Any]
@@ -190,21 +242,11 @@ class FollowUpContext:
         allowed_keys = INTENT_ENTITY_WHITELIST.get(intent, [])
         return {k: v for k, v in entities.items() if k in allowed_keys}
 
-    # ------------------------------------------------------------------
-    # CONSERVATIVE INTENT CLASS INFERENCE (BLOCKING ONLY)
-    # ------------------------------------------------------------------
+    # ======================================================
+    # INTENT CLASS INFERENCE (UNCHANGED)
+    # ======================================================
 
     def _infer_intent_class_from_text(self, text: str) -> Optional[str]:
-        """
-        Used ONLY to block cross-intent replay.
-
-        Ambiguous commands like:
-        - "open it again"
-        return None → allowed
-
-        Explicit domain words block mismatches.
-        """
-
         if any(w in text for w in ("browser", "search", "web", "url", "google")):
             return "system"
 
@@ -213,9 +255,9 @@ class FollowUpContext:
 
         return None
 
-    # ------------------------------------------------------------------
+    # ======================================================
     # CLEANUP
-    # ------------------------------------------------------------------
+    # ======================================================
 
     def _cleanup_old_contexts(self):
         now = datetime.now()
@@ -227,3 +269,4 @@ class FollowUpContext:
 
     def clear_context(self):
         self.contexts.clear()
+        self.pending_action = None
