@@ -5,6 +5,7 @@ import logging
 from typing import Dict, Any
 
 from core.system.app_registry import AppRegistry
+from core.system.open_authority import OpenAuthority, OpenTarget
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +26,21 @@ class SystemActions:
         self.last_args = None
 
     # =====================================================
-    # 🟦 OPEN APP (Day 50 + Day 51 alias resolution)
+    # 🟦 OPEN APP / BROWSER (Day 52 authority)
     # =====================================================
     def open_app(self, app_name: str, target: str = None) -> Dict[str, Any]:
         try:
             if not app_name:
                 return {"success": False, "message": "No app name provided"}
 
-            # 🔹 Day 51: resolve alias → executable
+            # 🔹 Day 52: decide authority
+            decision = OpenAuthority.decide(app_name)
+
+            # ---------------- BROWSER ----------------
+            if decision == OpenTarget.BROWSER:
+                return self.open_browser(app_name)
+
+            # ---------------- APP ----------------
             executable = AppRegistry.resolve(app_name)
 
             if self.system == "Linux":
@@ -50,6 +58,7 @@ class SystemActions:
                 "success": True,
                 "message": f"Opening {app_name}",
                 "executable": executable,
+                "mode": "app",
             }
 
         except Exception as e:
@@ -57,6 +66,41 @@ class SystemActions:
             return {
                 "success": False,
                 "message": f"Failed to open {app_name}",
+            }
+
+    # =====================================================
+    # 🟦 OPEN BROWSER (WEB AUTHORITY)
+    # =====================================================
+    def open_browser(self, query: str) -> Dict[str, Any]:
+        try:
+            if not query:
+                return {"success": False, "message": "No query provided"}
+
+            url = f"https://www.{query}.com"
+
+            if self.system == "Linux":
+                subprocess.Popen(["xdg-open", url])
+
+            elif self.system == "Windows":
+                subprocess.Popen(["start", url], shell=True)
+
+            elif self.system == "Darwin":
+                subprocess.Popen(["open", url])
+
+            self._store_last("open_browser", {"url": url})
+
+            return {
+                "success": True,
+                "message": f"Opening {query} in browser",
+                "url": url,
+                "mode": "browser",
+            }
+
+        except Exception as e:
+            logger.error(e)
+            return {
+                "success": False,
+                "message": f"Failed to open {query} in browser",
             }
 
     # =====================================================
@@ -174,11 +218,7 @@ _system_actions = SystemActions()
 def open_app(args: Dict[str, Any]):
     """
     Canonical system skill entry point for OPEN_APP.
-
-    Expected args:
-    {
-        "app_name": "chrome"
-    }
+    Day 52: Browser vs App authority enforced.
     """
     app_name = args.get("app_name")
 
