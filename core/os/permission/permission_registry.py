@@ -1,3 +1,13 @@
+from core.os.permission.scopes import (
+    APP_CONTROL,
+    SYSTEM_INFO,
+    SCREEN_CAPTURE,
+    FILE_READ,
+    FILE_DELETE,
+    NETWORK_CONTROL,
+)
+
+
 class PermissionRegistry:
     """
     Day 50 – Explicit OS permission registry
@@ -7,13 +17,31 @@ class PermissionRegistry:
     - Single source of truth for permissions
     """
 
+    # -------------------------------------------------
     # Action → required scopes
+    # -------------------------------------------------
     _REGISTRY = {
-        # App control (Chrome, Firefox, Calculator, etc.)
-        "OPEN_APP": {"APP_CONTROL"},
+        # -----------------------------
+        # App control
+        # -----------------------------
+        "OPEN_APP": {APP_CONTROL},
 
+        # -----------------------------
         # System inspection
-        "SYSTEM_INFO": {"SYSTEM_INFO"},
+        # -----------------------------
+        "SYSTEM_INFO": {SYSTEM_INFO},
+        "SCREEN_CAPTURE": {SCREEN_CAPTURE},
+
+        # -----------------------------
+        # File system
+        # -----------------------------
+        "FILE_READ": {FILE_READ},
+        "FILE_DELETE": {FILE_DELETE},
+
+        # -----------------------------
+        # Network
+        # -----------------------------
+        "NETWORK_CONTROL": {NETWORK_CONTROL},
     }
 
     # Granted scopes (runtime)
@@ -24,7 +52,11 @@ class PermissionRegistry:
     # -------------------------------------------------
     @classmethod
     def get_required_scopes(cls, action_type: str) -> set:
-        return cls._REGISTRY.get(action_type, set())
+        """
+        Return required scopes for an action.
+        Unknown actions intentionally return empty set.
+        """
+        return set(cls._REGISTRY.get(action_type, set()))
 
     @classmethod
     def is_granted(cls, scope: str) -> bool:

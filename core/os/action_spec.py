@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Any, FrozenSet, Optional
+from typing import Dict, Any, FrozenSet
 
 from core.os.permission.permission_registry import PermissionRegistry
 from core.os.permission.scopes import ALL_SCOPES
@@ -21,22 +21,22 @@ class ActionSpec:
     """
 
     # Core identity
-    action_type: str                  # e.g. DELETE_FILE
-    category: str                     # SYSTEM | APP | FILE
-    target: str                       # canonical target identifier
+    action_type: str
+    category: str
+    target: str
 
     # Parameters
     parameters: Dict[str, Any]
 
     # Safety & permission
-    risk_level: str                   # LOW | MEDIUM | HIGH
+    risk_level: str
     required_scopes: FrozenSet[str]
     requires_confirmation: bool
 
     # File-operation–specific safety (Day 54)
-    destructive: bool                 # True for delete / overwrite
-    supports_undo: bool               # Metadata only (execution later)
-    requires_preview: bool            # Must show path preview first
+    destructive: bool
+    supports_undo: bool
+    requires_preview: bool
 
     def __init__(self, **kwargs):
         allowed_fields = {
@@ -97,13 +97,11 @@ class ActionSpec:
 
         # ---------- safety invariants ----------
 
-        # Destructive actions must be HIGH risk
         if destructive and risk_level != "HIGH":
             raise ValueError(
                 "Destructive actions must have risk_level='HIGH'"
             )
 
-        # Preview is mandatory for file operations
         if category == "FILE" and not requires_preview:
             raise ValueError(
                 "File actions must require preview (requires_preview=True)"
@@ -126,13 +124,11 @@ class ActionSpec:
         object.__setattr__(self, "parameters", parameters)
         object.__setattr__(self, "risk_level", risk_level)
         object.__setattr__(self, "required_scopes", frozenset(required_scopes))
-
         object.__setattr__(
             self,
             "requires_confirmation",
             risk_level == "HIGH",
         )
-
         object.__setattr__(self, "destructive", destructive)
         object.__setattr__(self, "supports_undo", supports_undo)
         object.__setattr__(self, "requires_preview", requires_preview)

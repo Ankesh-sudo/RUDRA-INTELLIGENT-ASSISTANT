@@ -1,4 +1,8 @@
-from typing import Dict, Optional, Any
+from __future__ import annotations
+
+from typing import Dict, Optional, Any, Literal
+from datetime import datetime
+import uuid
 
 from core.nlp.intent import Intent
 from core.os.action_spec import ActionSpec
@@ -8,10 +12,15 @@ class PendingAction:
     """
     Holds a partially-resolved or confirmation-gated command.
 
-    Day 54 extensions:
-    - Supports FILE operations
-    - Carries preview data (read-only)
-    - Declares undo metadata (no execution)
+    Guarantees:
+    - No inference
+    - No execution
+    - No permission logic
+    - No mutation
+
+    Used by:
+    - Legacy intent follow-ups (Day 15.4)
+    - Action confirmation flow (Day 54 → Day 55)
     """
 
     def __init__(
@@ -23,19 +32,28 @@ class PendingAction:
         missing_fields: Optional[set[str]] = None,
         preview_data: Optional[Dict[str, Any]] = None,
         undo_plan: Optional[Dict[str, Any]] = None,
+        confirmable: bool = False,
     ):
-        # Legacy intent-based follow-ups (Day 15.4 / Day 53)
+        # ---- Identity & lifecycle ----
+        self.id: str = str(uuid.uuid4())
+        self.created_at: datetime = datetime.utcnow()
+        self.status: Literal[
+            "awaiting_confirmation", "executed", "cancelled"
+        ] = "awaiting_confirmation"
+
+        # ---- Legacy intent-based follow-ups ----
         self.intent: Optional[Intent] = intent
         self.args: Dict[str, Any] = args or {}
         self.missing_fields: set[str] = missing_fields or set()
 
-        # Day 54: action-based execution
+        # ---- Action-based execution (Day 54+) ----
         self.action_spec: Optional[ActionSpec] = action_spec
+        self.confirmable: bool = confirmable
 
-        # Read-only preview shown to user
+        # Immutable preview payload (authoritative execution input)
         self.preview_data: Optional[Dict[str, Any]] = preview_data
 
-        # Placeholder for Day 55 undo execution
+        # Placeholder for undo metadata (execution happens later)
         self.undo_plan: Optional[Dict[str, Any]] = undo_plan
 
     # -------------------------------------------------
@@ -48,12 +66,17 @@ class PendingAction:
         self.missing_fields = missing_fields
 
     def clear(self):
+        """
+        Hard reset. Used only when abandoning pending state.
+        """
         self.intent = None
         self.action_spec = None
         self.args = {}
         self.missing_fields = set()
         self.preview_data = None
         self.undo_plan = None
+        self.confirmable = False
+        self.status = "cancelled"
 
     def is_active(self) -> bool:
         """
@@ -61,7 +84,10 @@ class PendingAction:
         - legacy intent follow-up is pending
         - action confirmation is pending
         """
-        return self.intent is not None or self.action_spec is not None
+        return (
+            self.status == "awaiting_confirmation"
+            and (self.intent is not None or self.action_spec is not None)
+        )
 
     def fill(self, field: str, value):
         """
@@ -78,19 +104,42 @@ class PendingAction:
         return not self.missing_fields
 
     # -------------------------------------------------
-    # Day 54 helpers (SAFE)
+    # Day 54–55 helpers (AUTHORITATIVE)
     # -------------------------------------------------
 
     def requires_confirmation(self) -> bool:
         """
         Whether this pending action is gated by confirmation.
         """
-        if self.action_spec:
-            return self.action_spec.requires_confirmation
-        return False
+        return bool(self.confirmable)
+
+    def is_confirmable(self) -> bool:
+        """
+        Single authoritative check used by orchestrator.
+        """
+        return (
+            self.confirmable
+            and self.status == "awaiting_confirmation"
+            and self.action_spec is not None
+            and self.preview_data is not None
+        )
 
     def is_file_action(self) -> bool:
         return self.action_spec is not None and self.action_spec.category == "FILE"
 
     def has_preview(self) -> bool:
         return self.preview_data is not None
+
+    # -------------------------------------------------
+    # Lifecycle transitions (SINGLE-USE)
+    # -------------------------------------------------
+
+    def mark_executed(self):
+        if self.status != "awaiting_confirmation":
+            raise RuntimeError("PendingAction already consumed")
+        self.status = "executed"
+
+    def mark_cancelled(self):
+        if self.status != "awaiting_confirmation":
+            return
+        self.status = "cancelled"

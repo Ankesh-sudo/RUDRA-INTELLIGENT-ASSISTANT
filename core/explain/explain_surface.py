@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Any
 
 
 class ExplainSurface:
@@ -20,7 +20,7 @@ class ExplainSurface:
         self._lines = list(lines)
 
     # -------------------------------------------------
-    # Construction helpers
+    # Construction helpers (OBJECT)
     # -------------------------------------------------
 
     @classmethod
@@ -31,6 +31,46 @@ class ExplainSurface:
     @classmethod
     def single(cls, line: str) -> "ExplainSurface":
         return cls([line])
+
+    # -------------------------------------------------
+    # Day 55 — RESPONSE HELPERS (DICT PAYLOADS)
+    # -------------------------------------------------
+
+    @staticmethod
+    def info(message: str, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        return {
+            "type": "info",
+            "message": message,
+            "payload": payload,
+        }
+
+    @staticmethod
+    def deny(message: str) -> Dict[str, Any]:
+        return {
+            "type": "deny",
+            "message": message,
+        }
+
+    @staticmethod
+    def noop(message: str) -> Dict[str, Any]:
+        return {
+            "type": "noop",
+            "message": message,
+        }
+
+    @staticmethod
+    def error(message: str) -> Dict[str, Any]:
+        return {
+            "type": "error",
+            "message": message,
+        }
+
+    @staticmethod
+    def permission_denied(permission: str) -> Dict[str, Any]:
+        return {
+            "type": "permission_denied",
+            "permission": permission,
+        }
 
     # -------------------------------------------------
     # Accessors

@@ -99,7 +99,7 @@ class FollowUpContext:
         }
 
     # ======================================================
-    # 🟦 DAY 53 — PENDING ACTION HANDLING (NEW)
+    # 🟦 DAY 53 — PENDING ACTION HANDLING
     # ======================================================
 
     def resolve_pending_action(self, text: str) -> Optional[PendingAction]:
@@ -144,8 +144,15 @@ class FollowUpContext:
         """
         self.pending_action = pending
 
+    def clear_pending_action(self):
+        """
+        Consume the pending action exactly once.
+        Safe to call multiple times.
+        """
+        self.pending_action = None
+
     # ======================================================
-    # CONTEXT STORAGE (UNCHANGED)
+    # CONTEXT STORAGE
     # ======================================================
 
     def add_context(
@@ -180,7 +187,7 @@ class FollowUpContext:
         return context
 
     # ======================================================
-    # CONTEXT RESOLUTION (DAY 15.4 — UNCHANGED)
+    # CONTEXT RESOLUTION (DAY 15.4)
     # ======================================================
 
     def resolve_reference(self, text: str) -> Tuple[Optional[Dict[str, Any]], str]:
@@ -215,7 +222,7 @@ class FollowUpContext:
         return candidate, "resolved"
 
     # ======================================================
-    # REPLAY CONTROL (UNCHANGED)
+    # REPLAY CONTROL
     # ======================================================
 
     def _is_replay_allowed(self, context: Dict[str, Any]) -> bool:
@@ -233,7 +240,7 @@ class FollowUpContext:
         context["last_replay"] = datetime.now()
 
     # ======================================================
-    # ENTITY FILTERING (UNCHANGED)
+    # ENTITY FILTERING
     # ======================================================
 
     def _filter_entities_by_intent(
@@ -243,7 +250,7 @@ class FollowUpContext:
         return {k: v for k, v in entities.items() if k in allowed_keys}
 
     # ======================================================
-    # INTENT CLASS INFERENCE (UNCHANGED)
+    # INTENT CLASS INFERENCE
     # ======================================================
 
     def _infer_intent_class_from_text(self, text: str) -> Optional[str]:
