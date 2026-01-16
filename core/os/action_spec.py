@@ -1,29 +1,54 @@
-from dataclasses import dataclass, field
-from typing import Dict, Any, FrozenSet
+from dataclasses import dataclass
+from typing import Dict, Any, FrozenSet, Optional
 
 from core.os.permission.permission_registry import PermissionRegistry
 from core.os.permission.scopes import ALL_SCOPES
 
 
 _ALLOWED_RISK_LEVELS = {"LOW", "MEDIUM", "HIGH"}
+_ALLOWED_ACTION_CATEGORIES = {"SYSTEM", "APP", "FILE"}
 
 
 @dataclass(frozen=True, init=False)
 class ActionSpec:
-    action_type: str
-    target: str
+    """
+    Immutable, declarative description of an executable action.
+
+    IMPORTANT:
+    - No execution logic
+    - No filesystem mutation
+    - Pure intent + safety metadata
+    """
+
+    # Core identity
+    action_type: str                  # e.g. DELETE_FILE
+    category: str                     # SYSTEM | APP | FILE
+    target: str                       # canonical target identifier
+
+    # Parameters
     parameters: Dict[str, Any]
-    risk_level: str
+
+    # Safety & permission
+    risk_level: str                   # LOW | MEDIUM | HIGH
     required_scopes: FrozenSet[str]
     requires_confirmation: bool
+
+    # File-operation–specific safety (Day 54)
+    destructive: bool                 # True for delete / overwrite
+    supports_undo: bool               # Metadata only (execution later)
+    requires_preview: bool            # Must show path preview first
 
     def __init__(self, **kwargs):
         allowed_fields = {
             "action_type",
+            "category",
             "target",
             "parameters",
             "risk_level",
             "required_scopes",
+            "destructive",
+            "supports_undo",
+            "requires_preview",
         }
 
         unknown = set(kwargs.keys()) - allowed_fields
@@ -32,14 +57,22 @@ class ActionSpec:
 
         try:
             action_type = kwargs["action_type"]
+            category = kwargs["category"]
             target = kwargs["target"]
             parameters = kwargs["parameters"]
             risk_level = kwargs["risk_level"]
             required_scopes = kwargs["required_scopes"]
+            destructive = kwargs["destructive"]
+            supports_undo = kwargs["supports_undo"]
+            requires_preview = kwargs["requires_preview"]
         except KeyError as e:
             raise ValueError(f"Missing required field: {e.args[0]}")
 
-        # ---- basic validation ----
+        # ---------- basic validation ----------
+
+        if category not in _ALLOWED_ACTION_CATEGORIES:
+            raise ValueError(f"Invalid category: {category}")
+
         if not isinstance(parameters, dict):
             raise ValueError("parameters must be a dict")
 
@@ -47,28 +80,59 @@ class ActionSpec:
             raise ValueError(f"Invalid risk level: {risk_level}")
 
         if not isinstance(required_scopes, (set, frozenset)):
-            raise ValueError("required_scopes must be a set")
+            raise ValueError("required_scopes must be a set or frozenset")
 
         unknown_scopes = set(required_scopes) - ALL_SCOPES
         if unknown_scopes:
             raise ValueError(f"Unknown permission scopes: {unknown_scopes}")
 
-        # ---- registry consistency ----
-        expected = PermissionRegistry.get_required_scopes(action_type)
-        if expected != set(required_scopes):
+        if not isinstance(destructive, bool):
+            raise ValueError("destructive must be boolean")
+
+        if not isinstance(supports_undo, bool):
+            raise ValueError("supports_undo must be boolean")
+
+        if not isinstance(requires_preview, bool):
+            raise ValueError("requires_preview must be boolean")
+
+        # ---------- safety invariants ----------
+
+        # Destructive actions must be HIGH risk
+        if destructive and risk_level != "HIGH":
             raise ValueError(
-                f"Scopes mismatch for action '{action_type}'. "
-                f"Expected {expected}, got {set(required_scopes)}"
+                "Destructive actions must have risk_level='HIGH'"
             )
 
-        # ---- freeze ----
+        # Preview is mandatory for file operations
+        if category == "FILE" and not requires_preview:
+            raise ValueError(
+                "File actions must require preview (requires_preview=True)"
+            )
+
+        # ---------- registry consistency ----------
+
+        expected_scopes = PermissionRegistry.get_required_scopes(action_type)
+        if expected_scopes != set(required_scopes):
+            raise ValueError(
+                f"Scopes mismatch for action '{action_type}'. "
+                f"Expected {expected_scopes}, got {set(required_scopes)}"
+            )
+
+        # ---------- freeze ----------
+
         object.__setattr__(self, "action_type", action_type)
+        object.__setattr__(self, "category", category)
         object.__setattr__(self, "target", target)
         object.__setattr__(self, "parameters", parameters)
         object.__setattr__(self, "risk_level", risk_level)
         object.__setattr__(self, "required_scopes", frozenset(required_scopes))
+
         object.__setattr__(
             self,
             "requires_confirmation",
             risk_level == "HIGH",
         )
+
+        object.__setattr__(self, "destructive", destructive)
+        object.__setattr__(self, "supports_undo", supports_undo)
+        object.__setattr__(self, "requires_preview", requires_preview)

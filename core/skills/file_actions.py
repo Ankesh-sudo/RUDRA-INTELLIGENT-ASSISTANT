@@ -1,121 +1,108 @@
-import os
 import re
 from typing import Optional
 
 from core.nlp.intent import Intent
-from core.system.path_resolver import resolve_base_path, resolve_file_path
-from core.system.file_reader import read_text_file
+from core.context.pending_action import PendingAction
+from core.explain.explain_surface import ExplainSurface
+from core.os.action_spec import ActionSpec
+from core.os.permission.permission_registry import PermissionRegistry
+from core.system.path_resolver import (
+    resolve_base_path,
+    resolve_file_path,
+    build_path_preview,
+)
 
 
 # ---------------------------
 # Public entry point
 # ---------------------------
 
-def handle(intent: Intent, raw_text: str) -> str:
-    text = normalize_text(raw_text.lower().strip())
+def handle(intent: Intent, raw_text: str):
+    """
+    Day 54 contract:
+    - NO filesystem mutation
+    - NO file reading
+    - Preview + confirmation only
+    """
 
-    if intent == Intent.LIST_FILES:
-        return _handle_list_files(text)
+    text = raw_text.lower().strip()
 
-    if intent == Intent.READ_FILE:
-        return _handle_read_file(text)
+    if intent == Intent.DELETE_FILE:
+        return _prepare_delete(text)
 
-    return "I can't do that."
+    if intent == Intent.COPY_FILE:
+        return _explain_only("Copy will be enabled on Day 55.")
 
+    if intent == Intent.MOVE_FILE:
+        return _explain_only("Move will be enabled on Day 55.")
 
-# ---------------------------
-# LIST FILES
-# ---------------------------
-
-def _handle_list_files(text: str) -> str:
-    base_dir = resolve_base_path(text)
-
-    if not base_dir or not os.path.isdir(base_dir):
-        return "I can't access that location."
-
-    try:
-        entries = sorted(os.listdir(base_dir))
-    except Exception:
-        return "I couldn't list files there."
-
-    if not entries:
-        return "That folder is empty."
-
-    entries = entries[:20]
-
-    files = []
-    folders = []
-
-    for item in entries:
-        full_path = os.path.join(base_dir, item)
-        if os.path.isdir(full_path):
-            folders.append(item + "/")
-        else:
-            files.append(item)
-
-    parts = []
-    if folders:
-        parts.append("Folders: " + ", ".join(folders))
-    if files:
-        parts.append("Files: " + ", ".join(files))
-
-    return " | ".join(parts)
+    return None
 
 
 # ---------------------------
-# READ FILE
+# DELETE FILE (PREVIEW ONLY)
 # ---------------------------
 
-def _handle_read_file(text: str) -> str:
+def _prepare_delete(text: str):
     filename = _extract_filename(text)
     if not filename:
-        return "Please tell me the file name."
+        return _explain_only("Please specify the file to delete.")
 
     base_dir = resolve_base_path(text)
     if not base_dir:
-        return "I can't access that location."
+        return _explain_only("I can't access that location.")
 
-    path = resolve_file_path(filename, base_dir)
-    if not path:
-        return "I couldn't find that file."
+    source_path = resolve_file_path(filename, base_dir)
+    if not source_path:
+        return _explain_only("That file does not exist.")
 
-    content = read_text_file(path)
-    if content is None:
-        return "That file cannot be read safely."
+    preview = build_path_preview(source_path)
+    if not preview:
+        return _explain_only("That file does not exist.")
 
-    content = content.strip()
-    if not content:
-        return "The file is empty."
-
-    MAX_CHARS = 800
-    if len(content) > MAX_CHARS:
-        content = content[:MAX_CHARS] + "..."
-
-    return f"Here is the content of {filename}:\n{content}"
-
-
-# ---------------------------
-# Helpers
-# ---------------------------
-
-def normalize_text(text: str) -> str:
-    """
-    Normalizes spoken filenames:
-    'notes dot txt' → 'notes.txt'
-    """
-    return (
-        text.replace(" dot ", ".")
-            .replace(" dot", ".")
-            .replace(" txt", ".txt")
-            .replace(" pdf", ".pdf")
-            .replace(" md", ".md")
-            .replace(" log", ".log")
-            .strip()
+    action = ActionSpec(
+        action_type="DELETE_FILE",
+        category="FILE",
+        target=preview["path"],
+        parameters={},
+        risk_level="HIGH",
+        required_scopes=PermissionRegistry.get_required_scopes("DELETE_FILE"),
+        destructive=True,
+        supports_undo=True,
+        requires_preview=True,
     )
 
+    pending = PendingAction(
+        action_spec=action,
+        preview_data=preview,
+        undo_plan=None,
+    )
+
+    explain = ExplainSurface.from_lines(
+        "I’m about to delete:",
+        f"📄 {preview['path']}",
+        f"Size: {preview.get('size', 'unknown')}",
+        "",
+        "Should I proceed?",
+    )
+
+    return pending, explain
+
+
+# ---------------------------
+# Helpers (SAFE)
+# ---------------------------
 
 def _extract_filename(text: str) -> Optional[str]:
-    match = re.search(r"\b([\w\-]+\.(txt|md|log|pdf))\b", text)
+    """
+    Extract a simple filename from text.
+    Deterministic, no guessing, no directories.
+    """
+    match = re.search(r"\b([\w\-]+\.[a-z0-9]+)\b", text)
     if match:
         return match.group(1)
     return None
+
+
+def _explain_only(message: str):
+    return ExplainSurface.from_lines(message)
