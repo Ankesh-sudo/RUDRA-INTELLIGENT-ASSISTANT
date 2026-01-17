@@ -1,20 +1,23 @@
 from core.os.permission.scopes import (
-    APP_CONTROL,
+    TERMINAL_EXEC,
     SYSTEM_INFO,
     SCREEN_CAPTURE,
     FILE_READ,
     FILE_DELETE,
+    SYSTEM_CONTROL,
     NETWORK_CONTROL,
 )
 
 
 class PermissionRegistry:
     """
-    Day 50 – Explicit OS permission registry
+    Explicit OS permission registry.
 
-    - Scope-based (not action-spec based)
-    - Stateless except for granted scopes
-    - Single source of truth for permissions
+    Design principles:
+    - Scope-based (not intent-based)
+    - Only DANGEROUS capabilities require permission
+    - Safe UI actions require NO permission
+    - Stateless regarding execution
     """
 
     # -------------------------------------------------
@@ -22,29 +25,45 @@ class PermissionRegistry:
     # -------------------------------------------------
     _REGISTRY = {
         # -----------------------------
-        # App control
+        # 🟢 SAFE UI / USER-LEVEL ACTIONS
         # -----------------------------
-        "OPEN_APP": {APP_CONTROL},
+        # Explicitly NO permission required
+        "OPEN_APP": set(),
+        "OPEN_BROWSER": set(),
+        "OPEN_FILE_MANAGER": set(),
 
         # -----------------------------
-        # System inspection
+        # 🟢 SAFE SYSTEM INSPECTION
         # -----------------------------
-        "SYSTEM_INFO": {SYSTEM_INFO},
-        "SCREEN_CAPTURE": {SCREEN_CAPTURE},
+        "SYSTEM_INFO": set(),
 
         # -----------------------------
-        # File system
+        # 🔴 TERMINAL / COMMAND EXECUTION
+        # -----------------------------
+        "OPEN_TERMINAL": {TERMINAL_EXEC},
+        "RUN_COMMAND": {TERMINAL_EXEC},
+
+        # -----------------------------
+        # 🔴 FILE SYSTEM
         # -----------------------------
         "FILE_READ": {FILE_READ},
         "FILE_DELETE": {FILE_DELETE},
 
         # -----------------------------
-        # Network
+        # 🔴 SCREEN / PRIVACY
         # -----------------------------
+        "SCREEN_CAPTURE": {SCREEN_CAPTURE},
+
+        # -----------------------------
+        # 🔴 SYSTEM / NETWORK
+        # -----------------------------
+        "SYSTEM_CONTROL": {SYSTEM_CONTROL},
         "NETWORK_CONTROL": {NETWORK_CONTROL},
     }
 
-    # Granted scopes (runtime)
+    # -------------------------------------------------
+    # Runtime granted scopes (session-only)
+    # -------------------------------------------------
     _GRANTED = set()
 
     # -------------------------------------------------
@@ -54,7 +73,9 @@ class PermissionRegistry:
     def get_required_scopes(cls, action_type: str) -> set:
         """
         Return required scopes for an action.
-        Unknown actions intentionally return empty set.
+
+        Unknown actions default to SAFE (no scopes),
+        forcing explicit opt-in for dangerous behavior.
         """
         return set(cls._REGISTRY.get(action_type, set()))
 
@@ -72,7 +93,7 @@ class PermissionRegistry:
         return all(scope in cls._GRANTED for scope in required)
 
     # -------------------------------------------------
-    # WRITE
+    # WRITE (USED ONLY BY CONSENT FLOW)
     # -------------------------------------------------
     @classmethod
     def grant(cls, scope: str):
@@ -82,6 +103,7 @@ class PermissionRegistry:
     def grant_action(cls, action_type: str):
         """
         Grants all scopes required for an action.
+        Safe actions grant nothing.
         """
         for scope in cls.get_required_scopes(action_type):
             cls._GRANTED.add(scope)

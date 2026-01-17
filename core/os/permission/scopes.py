@@ -4,28 +4,45 @@ Permission scope definitions.
 Rules:
 - ALL_SCOPES is the single source of truth
 - Canonical scopes are UPPER_SNAKE_CASE
-- Aliases may exist for compatibility, but MUST resolve to canonicals
+- Scopes represent *capabilities*, not intents
+- Safe UI actions must NOT require permission
 """
 
 # -------------------------------------------------
-# Canonical scopes
+# 🔐 Canonical scopes (DANGEROUS / PRIVILEGED ONLY)
 # -------------------------------------------------
 
-APP_CONTROL = "APP_CONTROL"
-SYSTEM_INFO = "SYSTEM_INFO"
-SCREEN_CAPTURE = "SCREEN_CAPTURE"
+# Terminal / shell / command execution
+TERMINAL_EXEC = "TERMINAL_EXEC"
 
+# File system (destructive or sensitive)
 FILE_READ = "FILE_READ"
 FILE_DELETE = "FILE_DELETE"
 
+# System / OS-level control
+SYSTEM_CONTROL = "SYSTEM_CONTROL"
+
+# Network-level operations (future-safe)
 NETWORK_CONTROL = "NETWORK_CONTROL"
 
+# Screen / capture (privacy-sensitive)
+SCREEN_CAPTURE = "SCREEN_CAPTURE"
+
 
 # -------------------------------------------------
-# Backward-compat / human aliases (OPTIONAL BUT SAFE)
+# 🟢 Explicitly SAFE scopes (NON-PRIVILEGED)
 # -------------------------------------------------
-# These are NOT added to ALL_SCOPES directly.
-# They exist so higher layers can normalize input if needed.
+# These exist for semantic clarity only.
+# They are NOT enforced by PermissionEvaluator.
+
+GUI_APP_LAUNCH = "GUI_APP_LAUNCH"
+SYSTEM_INFO = "SYSTEM_INFO"
+
+
+# -------------------------------------------------
+# 🔁 Backward-compat / alias normalization
+# -------------------------------------------------
+# Aliases are NEVER added directly to ALL_SCOPES.
 
 SCOPE_ALIASES = {
     # file operations
@@ -34,21 +51,23 @@ SCOPE_ALIASES = {
     "file.read": FILE_READ,
     "file.delete": FILE_DELETE,
 
-    # lowercase variants
+    # legacy / lowercase
     "file_read": FILE_READ,
     "file_delete": FILE_DELETE,
+    "terminal": TERMINAL_EXEC,
+    "shell": TERMINAL_EXEC,
 }
 
 
 # -------------------------------------------------
-# Registry
+# 📌 Registry (ENFORCED SCOPES ONLY)
 # -------------------------------------------------
 
 ALL_SCOPES = {
-    APP_CONTROL,
-    SYSTEM_INFO,
-    SCREEN_CAPTURE,
+    TERMINAL_EXEC,
     FILE_READ,
     FILE_DELETE,
+    SYSTEM_CONTROL,
     NETWORK_CONTROL,
+    SCREEN_CAPTURE,
 }

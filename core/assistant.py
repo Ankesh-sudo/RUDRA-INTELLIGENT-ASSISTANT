@@ -23,23 +23,21 @@ from core.memory.confidence_adjuster import ConfidenceAdjuster
 from core.memory.memory_manager import MemoryManager
 from core.memory.short_term_memory import ShortTermMemory
 
-# 🔵 Day 25.1 — Memory usage mode (DEFAULT OFF)
+# 🔵 Memory
 from core.memory.usage_mode import MemoryUsageMode
-
-# 🔵 Day 25.5 — Memory usage trace sink (session-owned)
 from core.memory.trace_sink import MemoryTraceSink
-
-# 🔵 LTM promotion + consent
 from core.memory.ltm.promotion_evaluator import (
     MemoryPromotionEvaluator,
     PromotionAction
 )
-
-# 🔵 Day 23.2 — Classifier
 from core.memory.classifier import MemoryClassifier
 
-# 🔊 DAY 40 — TTS (FINAL OUTPUT ONLY)
+# 🔊 TTS
 from core.output.tts.tts_registry import TTSEngineRegistry
+
+# 🔐 Permissions
+from core.os.permission.consent_store import ConsentStore
+from core.os.permission.permission_registry import PermissionRegistry
 
 
 INTENT_CONFIDENCE_THRESHOLD = 0.65
@@ -53,7 +51,6 @@ CLARIFICATION_MESSAGES = [
 IDLE, ACTIVE, WAITING = "idle", "active", "waiting"
 
 NEGATION_TOKENS = {"dont", "do", "not", "never", "no"}
-
 AFFIRMATIVE = {"yes", "yeah", "yep", "sure", "ok"}
 NEGATIVE = {"no", "nope", "nah"}
 
@@ -68,29 +65,20 @@ class Assistant:
 
         self.action_executor = ActionExecutor()
 
-        self.pending_intent = None
-        self.pending_args = {}
-        self.missing_args = []
-
         self.clarify_index = 0
 
         self.memory_manager = MemoryManager()
         self.stm = ShortTermMemory()
 
-        # 🔒 Day 25.1 — Memory usage is OFF by default
         self.memory_usage_mode = MemoryUsageMode.DISABLED
-
-        # 🧾 Day 25.5 — Session-owned memory trace sink
         self.memory_trace_sink = MemoryTraceSink()
-
-        # 🔵 Promotion evaluator
         self.memory_promotion_evaluator = MemoryPromotionEvaluator()
-
-        # 🔵 Day 23.2 — Memory classifier
         self.memory_classifier = MemoryClassifier()
 
-        # 🔊 DAY 40 — TTS engine (optional, powerless)
         self.tts_engine = TTSEngineRegistry.get("kakora")
+
+        # 🔐 Permission store (session-scoped)
+        self.consent_store = ConsentStore()
 
     # =================================================
     # UTIL
@@ -126,20 +114,39 @@ class Assistant:
         if policy == "IGNORE":
             return
 
-        if policy == "SOFT":
-            print("Rudra > Do you want me to stop this action?")
-            return
-
         GLOBAL_INTERRUPT.trigger()
         self.action_executor.cancel_pending()
-
-        self.pending_intent = None
-        self.pending_args = {}
-        self.missing_args = []
-
         self.input.reset_execution_state()
         print("Rudra > Okay, stopped.")
         GLOBAL_INTERRUPT.clear()
+
+    # =================================================
+    # PERMISSION CONSENT LOOP (NEW)
+    # =================================================
+    def _handle_permission_request(self, intent: Intent) -> bool:
+        """
+        Ask user for permission and grant scopes if approved.
+        Returns True if granted, False otherwise.
+        """
+
+        scopes = PermissionRegistry.get_required_scopes(intent.value)
+        scope_list = ", ".join(scopes)
+
+        prompt = f"This action requires permission ({scope_list}). Allow?"
+        print(f"Rudra > {prompt}")
+        self.tts_engine.speak(prompt)
+
+        reply = self.input.read().strip().lower()
+        tokens = set(normalize_text(reply))
+
+        if tokens & AFFIRMATIVE:
+            for scope in scopes:
+                self.consent_store.grant(scope)
+            return True
+
+        print("Rudra > Permission not granted.")
+        self.tts_engine.speak("Permission not granted.")
+        return False
 
     # =================================================
     # CORE SINGLE CYCLE
@@ -147,22 +154,13 @@ class Assistant:
     def _cycle(self):
         wm = WorkingMemory()
 
-        context_builder = ContextPackBuilder()
-        context_pack = context_builder.build()
-
-        recent_user_stm = self.stm.fetch_recent(
-            role="user",
-            limit=3,
-            min_confidence=0.70
+        context_pack = ContextPackBuilder().build()
+        context_pack["stm_recent"] = self.stm.fetch_recent(
+            role="user", limit=3, min_confidence=0.70
         )
-        context_pack["stm_recent"] = recent_user_stm
-
-        follow_up_resolver = FollowUpResolver()
-        slot_merger = SlotPreferenceMerger()
-        confidence_adjuster = ConfidenceAdjuster()
 
         raw_text = self.input.read()
-        if not raw_text and not self.pending_intent:
+        if not raw_text:
             return
 
         validation = self.input_validator.validate(raw_text)
@@ -174,63 +172,37 @@ class Assistant:
         tokens = normalize_text(clean_text)
 
         if self._detect_embedded_interrupt(tokens):
-            self._handle_interrupt("embedded", self.pending_intent)
-            wm.mark_interrupted()
+            self._handle_interrupt("embedded", None)
             return
 
         scores = score_intents(tokens)
         intent, confidence = pick_best_intent(scores, tokens)
-        confidence = refine_confidence(
-            confidence, tokens, intent.value, self.ctx.last_intent
-        )
+        confidence = refine_confidence(confidence, tokens, intent.value, self.ctx.last_intent)
 
-        wm.set_intent(intent.value, confidence)
-
-        # ✅ FINAL FIX — correct FollowUpResolver API usage
         if confidence < INTENT_CONFIDENCE_THRESHOLD or intent == Intent.UNKNOWN:
-            resolved = follow_up_resolver.resolve(
-                tokens=tokens,
-                context_pack=context_pack
-            )
-            if resolved:
-                intent = Intent(resolved["resolved_intent"])
-                confidence = 0.7
-            else:
+            resolved = FollowUpResolver().resolve(tokens=tokens, context_pack=context_pack)
+            if not resolved:
                 print(self.next_clarification())
                 return
-
-        confidence = confidence_adjuster.adjust(
-            base_confidence=confidence,
-            intent=intent.value,
-            context_pack=context_pack
-        )
-
-        self.memory_manager.consider(
-            role="user",
-            content=clean_text,
-            intent=intent.value,
-            confidence=confidence,
-            content_type="conversation"
-        )
+            intent = Intent(resolved["resolved_intent"])
+            confidence = 0.7
 
         save_message("user", clean_text, intent.value)
 
         if intent == Intent.EXIT:
-            response = "Goodbye!"
-            print(f"Rudra > {response}")
-            self.tts_engine.speak(response)
+            print("Rudra > Goodbye!")
+            self.tts_engine.speak("Goodbye!")
             self.running = False
             return
 
-        if intent in (Intent.GREETING, Intent.HELP):
-            response = basic_handle(intent, clean_text)
-        else:
-            result = self.action_executor.execute(intent, clean_text, confidence)
-            response = result.get("message", "Done.")
+        # -------- EXECUTION --------
+        result = self.action_executor.execute(intent, clean_text, confidence)
 
-        # =================================================
-        # 🔊 FINAL OUTPUT (DAY 40–SEALED)
-        # =================================================
+        if result["message"] == "This action needs your confirmation.":
+            if self._handle_permission_request(intent):
+                result = self.action_executor.execute(intent, clean_text, confidence)
+
+        response = result.get("message", "Done.")
         print(f"Rudra > {response}")
         self.tts_engine.speak(response)
 

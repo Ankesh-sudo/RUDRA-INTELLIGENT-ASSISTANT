@@ -5,22 +5,33 @@ from core.os.permission.permission_registry import PermissionRegistry
 from core.os.permission.scopes import ALL_SCOPES
 
 
+# ==========================================================
+# CONSTANTS (SEALED)
+# ==========================================================
+
 _ALLOWED_RISK_LEVELS = {"LOW", "MEDIUM", "HIGH"}
+
+# ⚠️ CASE-SENSITIVE — DO NOT CHANGE
 _ALLOWED_ACTION_CATEGORIES = {"SYSTEM", "APP", "FILE"}
 
+
+# ==========================================================
+# ACTION SPEC
+# ==========================================================
 
 @dataclass(frozen=True, init=False)
 class ActionSpec:
     """
     Immutable, declarative description of an executable action.
 
-    IMPORTANT:
+    RULES:
     - No execution logic
-    - No filesystem mutation
-    - Pure intent + safety metadata
+    - No side effects
+    - No mutation
+    - Strict validation
     """
 
-    # Core identity
+    # Identity
     action_type: str
     category: str
     target: str
@@ -33,11 +44,14 @@ class ActionSpec:
     required_scopes: FrozenSet[str]
     requires_confirmation: bool
 
-    # File-operation–specific safety (Day 54)
+    # File / destructive safety
     destructive: bool
     supports_undo: bool
     requires_preview: bool
 
+    # ------------------------------------------------------
+    # CONSTRUCTOR (STRICT)
+    # ------------------------------------------------------
     def __init__(self, **kwargs):
         allowed_fields = {
             "action_type",
@@ -68,7 +82,9 @@ class ActionSpec:
         except KeyError as e:
             raise ValueError(f"Missing required field: {e.args[0]}")
 
-        # ---------- basic validation ----------
+        # --------------------------------------------------
+        # BASIC VALIDATION
+        # --------------------------------------------------
 
         if category not in _ALLOWED_ACTION_CATEGORIES:
             raise ValueError(f"Invalid category: {category}")
@@ -95,19 +111,25 @@ class ActionSpec:
         if not isinstance(requires_preview, bool):
             raise ValueError("requires_preview must be boolean")
 
-        # ---------- safety invariants ----------
+        # --------------------------------------------------
+        # SAFETY INVARIANTS (NON-NEGOTIABLE)
+        # --------------------------------------------------
 
+        # Destructive actions MUST be high risk
         if destructive and risk_level != "HIGH":
             raise ValueError(
                 "Destructive actions must have risk_level='HIGH'"
             )
 
+        # All file actions MUST require preview
         if category == "FILE" and not requires_preview:
             raise ValueError(
                 "File actions must require preview (requires_preview=True)"
             )
 
-        # ---------- registry consistency ----------
+        # --------------------------------------------------
+        # PERMISSION REGISTRY CONSISTENCY
+        # --------------------------------------------------
 
         expected_scopes = PermissionRegistry.get_required_scopes(action_type)
         if expected_scopes != set(required_scopes):
@@ -116,7 +138,9 @@ class ActionSpec:
                 f"Expected {expected_scopes}, got {set(required_scopes)}"
             )
 
-        # ---------- freeze ----------
+        # --------------------------------------------------
+        # FREEZE (IMMUTABLE)
+        # --------------------------------------------------
 
         object.__setattr__(self, "action_type", action_type)
         object.__setattr__(self, "category", category)
