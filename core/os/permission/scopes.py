@@ -71,3 +71,13 @@ ALL_SCOPES = {
     NETWORK_CONTROL,
     SCREEN_CAPTURE,
 }
+
+
+# -------------------------------------------------
+# 🧩 LEGACY EXPORTS (REQUIRED FOR LOCKED TESTS)
+# -------------------------------------------------
+# These are aliases ONLY.
+# They do NOT expand permission surface.
+
+# Older tests expect APP_CONTROL to exist
+APP_CONTROL = SYSTEM_CONTROL
