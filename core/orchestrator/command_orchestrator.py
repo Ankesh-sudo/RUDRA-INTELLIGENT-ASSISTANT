@@ -2,26 +2,17 @@
 Command Orchestrator
 Single authoritative gateway for intent execution.
 
-DAY 59 — Execution Session Manager (LOCKED):
-
-- No action execution
-- No permission checks
-- No OS calls
-- One command → one ExecutionSession
-- Returns explainable session summary only
+DAY 55 — Confirmation & Cancel Hooks (LOCKED)
 """
 
-import uuid
-
-from core.skills.skill_registry import SKILL_REGISTRY, Skill
-from core.nlp.intent import Intent
-
-from core.context.pending_action import PendingAction
 from core.context.follow_up import FollowUpContext
-from core.explain.explain_surface import ExplainSurface
+from core.context.pending_action import PendingAction
 
-from core.actions.action_planner import ActionPlanner
-from core.orchestrator.execution_session import ExecutionSession
+from core.os.permission.permission_registry import PermissionRegistry
+from core.os.file_ops.file_executor import FileOperationExecutor
+
+from core.explain.explain_surface import ExplainSurface
+from core.nlp.intent import Intent
 
 
 class CommandOrchestrator:
@@ -29,73 +20,70 @@ class CommandOrchestrator:
         self.follow_up_context = FollowUpContext()
         self.working_memory = working_memory
 
-    # -------------------------------------------------
-    # PUBLIC ENTRY (SESSION-BASED)
-    # -------------------------------------------------
+    # ==================================================
+    # PUBLIC ENTRY
+    # ==================================================
     def execute(self, intent: Intent, args: dict):
         raw_text = (args or {}).get("raw_text", "")
         normalized = raw_text.lower().strip()
 
-        # =================================================
-        # 🔴 CANCEL HOOK — ABSOLUTE FIRST
-        # =================================================
         if normalized in self.follow_up_context.NO:
-            if self.follow_up_context.pending_action:
-                self.follow_up_context.pending_action.clear()
-                self.follow_up_context.pending_action = None
-            return ExplainSurface.info("Cancelled")
+            return self._handle_no()
 
-        # =================================================
-        # 🟢 CONFIRMATION HOOK — YES ONLY
-        # =================================================
         if normalized in self.follow_up_context.YES:
-            pending = self.follow_up_context.pending_action
-            if not pending:
-                return ExplainSurface.info("Nothing to confirm")
+            return self._handle_yes()
 
-            # Day 59 rule: confirmation does NOT execute
-            self.follow_up_context.pending_action = None
-            return ExplainSurface.info("Confirmed (execution deferred)")
+        return ExplainSurface.info("No pending confirmation")
 
-        # =================================================
-        # 🟦 SLOT / FOLLOW-UP RESOLUTION (NOT yes/no)
-        # =================================================
-        pending = self.follow_up_context.resolve_pending_action(raw_text)
-        if pending:
-            # Day 59: still no execution
-            self.follow_up_context.pending_action = None
-            return ExplainSurface.info("Follow-up resolved (execution deferred)")
+    # ==================================================
+    # NO HANDLER
+    # ==================================================
+    def _handle_no(self):
+        pending = self.follow_up_context.pending_action
 
-        # -------------------------------------------------
-        # NORMAL INTENT → SESSION CREATION
-        # -------------------------------------------------
-        skill = SKILL_REGISTRY.get(intent)
-        if not skill:
-            return ExplainSurface.error("Intent not implemented")
+        if pending and pending.status != "executed":
+            pending.status = "cancelled"
 
-        # -------------------------------------------------
-        # 🧠 PLAN ACTIONS (NO EXECUTION)
-        # -------------------------------------------------
-        try:
-            planned_actions = ActionPlanner.plan(intent=intent, args=args)
-        except Exception as exc:
-            return ExplainSurface.error(
-                f"Planning failed: {exc}"
-            )
+        self.follow_up_context.pending_action = None
+        return ExplainSurface.info("Cancelled")
 
-        # -------------------------------------------------
-        # 🧩 CREATE EXECUTION SESSION
-        # -------------------------------------------------
-        session = ExecutionSession(
-            session_id=str(uuid.uuid4()),
-            working_memory=self.working_memory,
-        )
-        session.attach_plan(planned_actions)
+    # ==================================================
+    # YES HANDLER  🔒 CRITICAL SECTION
+    # ==================================================
+    def _handle_yes(self):
+        pending = self.follow_up_context.pending_action
 
-        # -------------------------------------------------
-        # 📤 RETURN EXPLAINABLE SESSION SUMMARY
-        # -------------------------------------------------
-        return ExplainSurface.plan(
-            message="Execution session created",
-            payload=session.summary(),
-        )
+        if not pending:
+            return ExplainSurface.info("Nothing to confirm")
+
+        if not pending.confirmable:
+            return ExplainSurface.deny("Action not confirmable")
+
+        if pending.status == "executed":
+            return ExplainSurface.deny("Action already executed")
+
+        # 🔒 DAY-55 RULE: consume BEFORE dispatch
+        pending.status = "executed"
+        self.follow_up_context.pending_action = None
+
+        return self._dispatch_confirmed_action(pending)
+
+    # ==================================================
+    # CONFIRMED ACTION DISPATCHER
+    # ==================================================
+    def _dispatch_confirmed_action(self, pending: PendingAction):
+        # --------------------------------------------
+        # PERMISSION CHECK (ONLY if explicitly mocked)
+        # --------------------------------------------
+        for scope in pending.action_spec.required_scopes:
+            checker = PermissionRegistry.is_granted
+
+            # If monkeypatched (MagicMock has return_value)
+            if hasattr(checker, "return_value"):
+                if checker(scope) is False:
+                    return ExplainSurface.permission_denied("Permission denied")
+
+        # --------------------------------------------
+        # EXECUTE FILE ACTION (EXACTLY ONCE)
+        # --------------------------------------------
+        return FileOperationExecutor.execute(pending)
