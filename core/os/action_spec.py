@@ -86,9 +86,12 @@ class ActionSpec:
         # BASIC VALIDATION
         # --------------------------------------------------
 
+<<<<<<< HEAD
         if category not in _ALLOWED_ACTION_CATEGORIES:
             raise ValueError(f"Invalid category: {category}")
 
+=======
+>>>>>>> 8fb1188 (Day 49: skip permission registry scope check for HIGH risk actions)
         if not isinstance(parameters, dict):
             raise ValueError("parameters must be a dict")
 
@@ -102,6 +105,7 @@ class ActionSpec:
         if unknown_scopes:
             raise ValueError(f"Unknown permission scopes: {unknown_scopes}")
 
+<<<<<<< HEAD
         if not isinstance(destructive, bool):
             raise ValueError("destructive must be boolean")
 
@@ -142,6 +146,26 @@ class ActionSpec:
         # FREEZE (IMMUTABLE)
         # --------------------------------------------------
 
+=======
+        # --------------------------------------------------
+        # PERMISSION REGISTRY CONSISTENCY
+        # --------------------------------------------------
+        # 🔒 DAY-49 RULE:
+        # High-risk actions are validated AFTER confirmation,
+        # so registry scope matching is skipped here.
+        if risk_level != "HIGH":
+            expected = PermissionRegistry.get_required_scopes(action_type)
+            if expected != set(required_scopes):
+                raise ValueError(
+                    f"Scopes mismatch for action '{action_type}'. "
+                    f"Expected {expected}, got {set(required_scopes)}"
+                )
+
+        # --------------------------------------------------
+        # FREEZE (IMMUTABLE)
+        # --------------------------------------------------
+
+>>>>>>> 8fb1188 (Day 49: skip permission registry scope check for HIGH risk actions)
         object.__setattr__(self, "action_type", action_type)
         object.__setattr__(self, "category", category)
         object.__setattr__(self, "target", target)
