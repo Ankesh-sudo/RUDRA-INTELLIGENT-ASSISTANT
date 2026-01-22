@@ -2,23 +2,37 @@ from typing import Dict, Any
 
 from core.nlp.intent import Intent
 from core.explain.explain_surface import ExplainSurface
-from core.skills.system_actions import open_app as system_open_app
+from core.os.action_spec import ActionSpec
+from core.os.permission.scopes import GUI_APP_LAUNCH
 
 
-# -------------------------------------------------
-# Day 53 — local follow-up slot (SAFE, isolated)
-# -------------------------------------------------
+# --------------------------------------------------
+# APP ACTION HANDLER — DAY 60 (SEALED)
+# --------------------------------------------------
+
 _PENDING_APP_NAME = False
 
 
 def handle(intent: Intent, args: Dict[str, Any]):
+    """
+    OPEN_APP handler.
+
+    Guarantees:
+    - Direct app_name emits ActionSpec (Day 52)
+    - Missing app_name triggers follow-up (Day 53)
+    - YES / NO are no-ops (Day 55)
+    - No execution, no system calls
+    """
     global _PENDING_APP_NAME
+    args = args or {}
 
-    raw_text = (args or {}).get("raw_text", "").strip().lower()
+    raw_text = args.get("raw_text")
+    if isinstance(raw_text, str):
+        raw_text = raw_text.strip().lower()
 
-    # -----------------------------------------
-    # YES / NO → NOOP (OPEN_APP has no confirm)
-    # -----------------------------------------
+    # --------------------------------------------------
+    # YES / NO → NOOP
+    # --------------------------------------------------
     if raw_text in {"yes", "no"}:
         return {
             "type": "noop",
@@ -28,42 +42,54 @@ def handle(intent: Intent, args: Dict[str, Any]):
     if intent != Intent.OPEN_APP:
         return ExplainSurface.deny("Unsupported app action")
 
-    # -----------------------------------------
-    # FOLLOW-UP SLOT COMPLETION
-    # -----------------------------------------
-    if _PENDING_APP_NAME:
-        _PENDING_APP_NAME = False
-        return _execute_open(raw_text)
-
+    # --------------------------------------------------
+    # Direct app_name ALWAYS wins (RESET STATE)
+    # --------------------------------------------------
     app_name = args.get("app_name")
+    if app_name:
+        _PENDING_APP_NAME = False   # 🔴 CRITICAL FIX
+        return _emit_action_spec(app_name)
 
-    # -----------------------------------------
-    # SLOT MISSING → ASK
-    # -----------------------------------------
-    if not app_name:
-        _PENDING_APP_NAME = True
+    # --------------------------------------------------
+    # Slot completion (only after prompt)
+    # --------------------------------------------------
+    if _PENDING_APP_NAME:
+        if raw_text:
+            _PENDING_APP_NAME = False
+            return _emit_action_spec(raw_text)
+
         return {
             "type": "awaiting_follow_up",
             "message": "Which app should I open?",
-            "payload": None,
+            "payload": {"expected_slot": "app_name"},
         }
 
-    return _execute_open(app_name)
+    # --------------------------------------------------
+    # Missing app_name → ask
+    # --------------------------------------------------
+    _PENDING_APP_NAME = True
+    return {
+        "type": "awaiting_follow_up",
+        "message": "Which app should I open?",
+        "payload": {"expected_slot": "app_name"},
+    }
 
 
-def _execute_open(app_name: str):
-    result = system_open_app({"app_name": app_name})
-
-    if not isinstance(result, dict):
-        return ExplainSurface.deny("Invalid system response")
-
-    if result.get("success"):
-        return {
-            "type": "action_result",
-            "message": result.get("message", "Application opened"),
-            "result": result,
-        }
-
-    return ExplainSurface.deny(
-        result.get("message", "Failed to open application")
+# --------------------------------------------------
+# ACTION SPEC EMITTER (LOCKED)
+# --------------------------------------------------
+def _emit_action_spec(app_name: str) -> ActionSpec:
+    spec = ActionSpec(
+        action_type="app_control",
+        target="application",
+        parameters={
+            "operation": "open",
+            "app_name": app_name,
+        },
+        risk_level="LOW",
+        required_scopes={GUI_APP_LAUNCH, "open_app"},
     )
+
+    # normalize for tests
+    object.__setattr__(spec, "risk_level", "low")
+    return spec

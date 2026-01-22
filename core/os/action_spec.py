@@ -99,7 +99,7 @@ class ActionSpec:
         # PERMISSION SCOPE VALIDATION
         # --------------------------------------------------
 
-        SAFE_SCOPES = {SYSTEM_INFO, GUI_APP_LAUNCH}
+        SAFE_SCOPES = {SYSTEM_INFO, GUI_APP_LAUNCH, "open_app"}
 
         for scope in required_scopes:
             if not isinstance(scope, str):

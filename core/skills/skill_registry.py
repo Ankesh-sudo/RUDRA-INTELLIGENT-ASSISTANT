@@ -2,7 +2,7 @@
 Skill Registry
 Authoritative mapping between Intent and Skill ownership.
 
-Day 50 scope:
+Day 50 scope (still valid):
 - Ownership only
 - No execution
 - No permissions
@@ -17,14 +17,17 @@ class Skill(Enum):
     FILESYSTEM = "filesystem"
     NOTES = "notes"
     BASIC = "basic"
+    APP = "app"          # Day 60 — App actions
 
 
 SKILL_REGISTRY = {
-    # Day 50 — OS control
-    Intent.OPEN_APP: Skill.SYSTEM,
+    # Day 60 — App control
+    Intent.OPEN_APP: Skill.APP,
 
-    # (Placeholders for future days; do not wire yet)
+    # Day 50 — Filesystem
     Intent.LIST_FILES: Skill.FILESYSTEM,
+
+    # Day 50 — Notes
     Intent.NOTE_CREATE: Skill.NOTES,
     Intent.NOTE_READ: Skill.NOTES,
 }
