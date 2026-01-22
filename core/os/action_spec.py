@@ -133,3 +133,6 @@ class ActionSpec:
         object.__setattr__(
             self, "requires_confirmation", requires_confirmation
         )
+    @property
+    def destructive(self) -> bool:
+        return bool(self.requires_confirmation)

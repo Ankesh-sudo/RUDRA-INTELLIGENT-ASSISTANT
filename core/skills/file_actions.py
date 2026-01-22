@@ -13,18 +13,7 @@ from core.system.path_resolver import (
 )
 
 
-# ---------------------------
-# Public entry point
-# ---------------------------
-
 def handle(intent: Intent, raw_text: str):
-    """
-    Day 54 contract:
-    - NO filesystem mutation
-    - NO file reading
-    - Preview + confirmation only
-    """
-
     text = raw_text.lower().strip()
 
     if intent == Intent.DELETE_FILE:
@@ -38,10 +27,6 @@ def handle(intent: Intent, raw_text: str):
 
     return None
 
-
-# ---------------------------
-# DELETE FILE (PREVIEW ONLY)
-# ---------------------------
 
 def _prepare_delete(text: str):
     filename = _extract_filename(text)
@@ -60,28 +45,26 @@ def _prepare_delete(text: str):
     if not preview:
         return _explain_only("That file does not exist.")
 
-    action = ActionSpec(
+    # -------------------------------------------------
+    # ActionSpec — ONLY supported + legacy fields
+    # -------------------------------------------------
+    action_spec = ActionSpec(
         action_type="DELETE_FILE",
-        category="FILE",
-        target=preview["path"],
-        parameters={},
         risk_level="HIGH",
         required_scopes=PermissionRegistry.get_required_scopes("DELETE_FILE"),
-        destructive=True,
-        supports_undo=True,
-        requires_preview=True,
+        destructive=True,  # ✅ LEGACY FIELD (allowed)
     )
 
     pending = PendingAction(
-        action_spec=action,
+        action_spec=action_spec,
         preview_data=preview,
         undo_plan=None,
+        confirmable=True,  # ✅ confirmation handled HERE
     )
 
     explain = ExplainSurface.from_lines(
         "I’m about to delete:",
         f"📄 {preview['path']}",
-        f"Size: {preview.get('size', 'unknown')}",
         "",
         "Should I proceed?",
     )
@@ -89,19 +72,9 @@ def _prepare_delete(text: str):
     return pending, explain
 
 
-# ---------------------------
-# Helpers (SAFE)
-# ---------------------------
-
 def _extract_filename(text: str) -> Optional[str]:
-    """
-    Extract a simple filename from text.
-    Deterministic, no guessing, no directories.
-    """
     match = re.search(r"\b([\w\-]+\.[a-z0-9]+)\b", text)
-    if match:
-        return match.group(1)
-    return None
+    return match.group(1) if match else None
 
 
 def _explain_only(message: str):
