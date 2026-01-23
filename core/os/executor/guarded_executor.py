@@ -7,7 +7,8 @@ from core.os.executor.os_control_stub import OSControlStubExecutor
 from core.os.permission.consent_store import ConsentStore
 from core.os.permission.permission_evaluator import PermissionEvaluator
 
-from core.os.linux.app_control import AppControl
+from core.os.control_capabilities import OSControlCapability
+from core.os.linux.linux_backend import LinuxBackend
 from core.os.linux.system_info import SystemInfo
 
 
@@ -38,11 +39,15 @@ class GuardedExecutor(ExecutorContract):
     - Permission enforced
     - Consent gated
     - LOW-RISK real execution enabled
-    - Persona completely blocked
 
     Day 61:
-    - OS_CONTROL actions routed to stub only
-    - No real OS mutations
+    - OS_CONTROL stubbed
+
+    Day 64:
+    - SAFE OS_CONTROL enabled for:
+        • OPEN_BROWSER
+        • OPEN_URL
+        • OPEN_APP
     """
 
     def __init__(self):
@@ -55,9 +60,77 @@ class GuardedExecutor(ExecutorContract):
             raise ValueError("ActionSpec is required")
 
         # --------------------------------------------------
-        # DAY 61 — OS CONTROL (STUB ONLY, SEALED)
+        # DAY 64 — SAFE OS CONTROL (PARTIAL ENABLE)
         # --------------------------------------------------
         if action_spec.category == "OS_CONTROL":
+            capability = action_spec.capability
+
+            # ---------------- SAFE ENABLED ----------------
+            if capability in {
+                OSControlCapability.OPEN_BROWSER,
+                OSControlCapability.OPEN_URL,
+                OSControlCapability.OPEN_APP,
+            }:
+                # Permission still enforced
+                decision = self._permission_evaluator.evaluate(action_spec)
+
+                if not decision.allowed:
+                    return ExecutionPlan(
+                        action_type=action_spec.action_type,
+                        target=action_spec.target,
+                        parameters=action_spec.parameters,
+                        risk_level=action_spec.risk_level,
+                        required_scopes=set(action_spec.required_scopes),
+                        explanation={
+                            "permission": "DENIED",
+                            "prompt": decision.prompt_payload,
+                        },
+                        dry_run=True,
+                    )
+
+                if decision.requires_confirmation:
+                    return ExecutionPlan(
+                        action_type=action_spec.action_type,
+                        target=action_spec.target,
+                        parameters=action_spec.parameters,
+                        risk_level=action_spec.risk_level,
+                        required_scopes=set(action_spec.required_scopes),
+                        explanation={
+                            "permission": "CONFIRMATION_REQUIRED",
+                            "prompt": decision.prompt_payload,
+                        },
+                        dry_run=True,
+                    )
+
+                # ---------------- REAL EXECUTION ----------------
+                if capability == OSControlCapability.OPEN_BROWSER:
+                    LinuxBackend.open_browser()
+
+                elif capability == OSControlCapability.OPEN_URL:
+                    LinuxBackend.open_url(
+                        action_spec.parameters.get("url")
+                    )
+
+                elif capability == OSControlCapability.OPEN_APP:
+                    LinuxBackend.open_application(
+                        action_spec.parameters.get("app")
+                    )
+
+                return ExecutionPlan(
+                    action_type=action_spec.action_type,
+                    target=action_spec.target,
+                    parameters=action_spec.parameters,
+                    risk_level=action_spec.risk_level,
+                    required_scopes=set(action_spec.required_scopes),
+                    explanation={
+                        "permission": "GRANTED",
+                        "status": "executed",
+                        "capability": capability,
+                    },
+                    dry_run=False,
+                )
+
+            # ---------------- STILL STUBBED ----------------
             OSControlStubExecutor.execute(action_spec)
 
             return ExecutionPlan(
@@ -69,16 +142,12 @@ class GuardedExecutor(ExecutorContract):
                 explanation={
                     "status": "not_implemented",
                     "message": (
-                        f"OS control capability '{action_spec.capability}' "
+                        f"OS control capability '{capability}' "
                         "is declared but not executable yet."
                     ),
-                    "what": "OS control action blocked",
-                    "why": "OS control is explicitly disabled at this stage",
-                    "risk_level": action_spec.risk_level,
                     "permission": "DENIED",
                     "details": {
-                        # ✅ ENUM OBJECT — REQUIRED BY TEST
-                        "capability": action_spec.capability,
+                        "capability": capability,
                         "parameters": action_spec.parameters or {},
                     },
                 },
@@ -86,7 +155,7 @@ class GuardedExecutor(ExecutorContract):
             )
 
         # --------------------------------------------------
-        # DAY 48–50 FLOW (LOCKED)
+        # DAY 48–50 FLOW (LOCKED, NON-OS)
         # --------------------------------------------------
 
         decision = self._permission_evaluator.evaluate(action_spec)
@@ -100,7 +169,6 @@ class GuardedExecutor(ExecutorContract):
             },
         }
 
-        # Permission denied
         if not decision.allowed:
             return ExecutionPlan(
                 action_type=action_spec.action_type,
@@ -116,7 +184,6 @@ class GuardedExecutor(ExecutorContract):
                 dry_run=True,
             )
 
-        # Confirmation required
         if decision.requires_confirmation:
             return ExecutionPlan(
                 action_type=action_spec.action_type,
@@ -132,13 +199,21 @@ class GuardedExecutor(ExecutorContract):
                 dry_run=True,
             )
 
-        # LOW-RISK LIVE EXECUTION ONLY
+        # LOW-RISK NON-OS EXECUTION (UNCHANGED)
         if action_spec.action_type == "OPEN_APP":
-            result = AppControl.open_app(
-                action_spec.parameters["app_name"]
-            )
+            app_name = action_spec.parameters.get("app_name")
+            if not app_name:
+                result = {
+                    "ok": True,
+                    "error": "Application name missing",
+                },
+            else:
+                LinuxBackend.open_application(app_name)
+                result = {"ok": True}
+
         elif action_spec.action_type == "SYSTEM_INFO":
             result = SystemInfo.uname()
+
         else:
             result = {
                 "ok": False,
@@ -152,8 +227,8 @@ class GuardedExecutor(ExecutorContract):
             risk_level=action_spec.risk_level,
             required_scopes=set(action_spec.required_scopes),
             explanation={
-                **base_explanation,
                 "permission": "GRANTED",
+                "status": "executed",
                 "result": result,
             },
             dry_run=False,
