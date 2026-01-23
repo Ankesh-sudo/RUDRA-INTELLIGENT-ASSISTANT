@@ -1,15 +1,22 @@
+import os
+import uuid
+from typing import Union
+
 from google.cloud import texttospeech
+
 from core.output.tts.tts_engine import TTSEngine
 from core.output.tts.tts_contract import FinalizedText
-import uuid
-import os
 
 
 class GoogleTTSEngine(TTSEngine):
     """
     Google Cloud Text-to-Speech engine.
-    Temporary production backend.
-    Final-text-only. No logic or persona influence.
+
+    🔒 Invariants:
+    - Output-only (no logic, no intent access)
+    - Finalized text only
+    - Fail-closed (errors produce silence)
+    - Temporary production backend
     """
 
     def __init__(
@@ -24,39 +31,67 @@ class GoogleTTSEngine(TTSEngine):
         self.speaking_rate = speaking_rate
         self.pitch = pitch
 
+        # Client init may raise if credentials missing;
+        # allow it to propagate once, then fail-closed at runtime.
         self.client = texttospeech.TextToSpeechClient()
 
-    def speak(self, text: FinalizedText) -> None:
-        synthesis_input = texttospeech.SynthesisInput(
-            text=text.text
-        )
+    # -------------------------------------------------
+    # Public API
+    # -------------------------------------------------
+    def speak(self, text: Union[FinalizedText, str]) -> None:
+        """
+        Speak finalized text.
 
-        voice = texttospeech.VoiceSelectionParams(
-            language_code=self.language_code,
-            name=self.voice_name,
-        )
+        Accepts:
+        - FinalizedText (preferred)
+        - str (compatibility; wrapped internally)
 
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.LINEAR16,
-            speaking_rate=self.speaking_rate,
-            pitch=self.pitch,
-        )
+        Failure => silent no-op.
+        """
 
-        response = self.client.synthesize_speech(
-            input=synthesis_input,
-            voice=voice,
-            audio_config=audio_config,
-        )
+        try:
+            final_text = (
+                text.text if isinstance(text, FinalizedText) else str(text)
+            ).strip()
 
-        out_dir = "runtime_tts"
-        os.makedirs(out_dir, exist_ok=True)
+            if not final_text:
+                return  # nothing to say
 
-        out_path = os.path.join(
-            out_dir, f"google_tts_{uuid.uuid4().hex}.wav"
-        )
+            synthesis_input = texttospeech.SynthesisInput(
+                text=final_text
+            )
 
-        with open(out_path, "wb") as f:
-            f.write(response.audio_content)
+            voice = texttospeech.VoiceSelectionParams(
+                language_code=self.language_code,
+                name=self.voice_name,
+            )
 
-        # 🔒 Play via OS default (pure side-effect)
-        os.system(f"aplay '{out_path}' >/dev/null 2>&1 &")
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.LINEAR16,
+                speaking_rate=self.speaking_rate,
+                pitch=self.pitch,
+            )
+
+            response = self.client.synthesize_speech(
+                input=synthesis_input,
+                voice=voice,
+                audio_config=audio_config,
+            )
+
+            out_dir = "runtime_tts"
+            os.makedirs(out_dir, exist_ok=True)
+
+            out_path = os.path.join(
+                out_dir,
+                f"google_tts_{uuid.uuid4().hex}.wav",
+            )
+
+            with open(out_path, "wb") as f:
+                f.write(response.audio_content)
+
+            # 🔒 Fire-and-forget playback (never blocks core)
+            os.system(f"aplay '{out_path}' >/dev/null 2>&1 &")
+
+        except Exception:
+            # 🔒 FAIL-CLOSED: silence is always safe
+            return

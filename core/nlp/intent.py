@@ -31,6 +31,9 @@ class Intent(Enum):
     OPEN_APP = "open_app"
     SYSTEM_INFO = "system_info"
 
+    OPEN_WEBSITE = "open_website"
+
+
     UNKNOWN = "unknown"
 
 

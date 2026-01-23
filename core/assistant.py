@@ -4,7 +4,6 @@ from core.input.input_validator import InputValidator
 from core.input_controller import InputController
 from core.nlp.normalizer import normalize_text
 from core.nlp.intent import Intent
-from core.skills.basic import handle as basic_handle
 from core.context.short_term import ShortTermContext
 from core.context.long_term import save_message
 from core.intelligence.intent_scorer import score_intents, pick_best_intent
@@ -18,22 +17,18 @@ from core.control.interrupt_policy import INTERRUPT_POLICY
 from core.memory.working_memory import WorkingMemory
 from core.memory.context_pack import ContextPackBuilder
 from core.memory.follow_up_resolver import FollowUpResolver
-from core.memory.slot_preference_merger import SlotPreferenceMerger
-from core.memory.confidence_adjuster import ConfidenceAdjuster
-from core.memory.memory_manager import MemoryManager
 from core.memory.short_term_memory import ShortTermMemory
 
 # 🔵 Memory
 from core.memory.usage_mode import MemoryUsageMode
 from core.memory.trace_sink import MemoryTraceSink
-from core.memory.ltm.promotion_evaluator import (
-    MemoryPromotionEvaluator,
-    PromotionAction
-)
+from core.memory.ltm.promotion_evaluator import MemoryPromotionEvaluator
 from core.memory.classifier import MemoryClassifier
+from core.memory.memory_manager import MemoryManager
 
 # 🔊 TTS
 from core.output.tts.tts_registry import TTSEngineRegistry
+from core.output.tts.voice_routing import PERSONA_VOICE_MAP
 
 # 🔐 Permissions
 from core.os.permission.consent_store import ConsentStore
@@ -75,7 +70,13 @@ class Assistant:
         self.memory_promotion_evaluator = MemoryPromotionEvaluator()
         self.memory_classifier = MemoryClassifier()
 
-        self.tts_engine = TTSEngineRegistry.get("kakora")
+        # -------------------------------------------------
+        # 🔊 TTS ENGINE RESOLUTION (FAIL-CLOSED)
+        # -------------------------------------------------
+        engine_key = PERSONA_VOICE_MAP.get("maahi")
+        self.tts_engine = (
+            TTSEngineRegistry.get(engine_key) if engine_key else None
+        )
 
         # 🔐 Permission store (session-scoped)
         self.consent_store = ConsentStore()
@@ -121,20 +122,17 @@ class Assistant:
         GLOBAL_INTERRUPT.clear()
 
     # =================================================
-    # PERMISSION CONSENT LOOP (NEW)
+    # PERMISSION CONSENT LOOP
     # =================================================
     def _handle_permission_request(self, intent: Intent) -> bool:
-        """
-        Ask user for permission and grant scopes if approved.
-        Returns True if granted, False otherwise.
-        """
-
         scopes = PermissionRegistry.get_required_scopes(intent.value)
         scope_list = ", ".join(scopes)
 
         prompt = f"This action requires permission ({scope_list}). Allow?"
         print(f"Rudra > {prompt}")
-        self.tts_engine.speak(prompt)
+
+        if self.tts_engine:
+            self.tts_engine.speak(prompt)
 
         reply = self.input.read().strip().lower()
         tokens = set(normalize_text(reply))
@@ -145,15 +143,15 @@ class Assistant:
             return True
 
         print("Rudra > Permission not granted.")
-        self.tts_engine.speak("Permission not granted.")
+        if self.tts_engine:
+            self.tts_engine.speak("Permission not granted.")
+
         return False
 
     # =================================================
     # CORE SINGLE CYCLE
     # =================================================
     def _cycle(self):
-        wm = WorkingMemory()
-
         context_pack = ContextPackBuilder().build()
         context_pack["stm_recent"] = self.stm.fetch_recent(
             role="user", limit=3, min_confidence=0.70
@@ -177,10 +175,14 @@ class Assistant:
 
         scores = score_intents(tokens)
         intent, confidence = pick_best_intent(scores, tokens)
-        confidence = refine_confidence(confidence, tokens, intent.value, self.ctx.last_intent)
+        confidence = refine_confidence(
+            confidence, tokens, intent.value, self.ctx.last_intent
+        )
 
         if confidence < INTENT_CONFIDENCE_THRESHOLD or intent == Intent.UNKNOWN:
-            resolved = FollowUpResolver().resolve(tokens=tokens, context_pack=context_pack)
+            resolved = FollowUpResolver().resolve(
+                tokens=tokens, context_pack=context_pack
+            )
             if not resolved:
                 print(self.next_clarification())
                 return
@@ -191,20 +193,24 @@ class Assistant:
 
         if intent == Intent.EXIT:
             print("Rudra > Goodbye!")
-            self.tts_engine.speak("Goodbye!")
+            if self.tts_engine:
+                self.tts_engine.speak("Goodbye!")
             self.running = False
             return
 
-        # -------- EXECUTION --------
         result = self.action_executor.execute(intent, clean_text, confidence)
 
         if result["message"] == "This action needs your confirmation.":
             if self._handle_permission_request(intent):
-                result = self.action_executor.execute(intent, clean_text, confidence)
+                result = self.action_executor.execute(
+                    intent, clean_text, confidence
+                )
 
         response = result.get("message", "Done.")
         print(f"Rudra > {response}")
-        self.tts_engine.speak(response)
+
+        if self.tts_engine:
+            self.tts_engine.speak(response)
 
         save_message("assistant", response, intent.value)
         self.ctx.update(intent.value)

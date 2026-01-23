@@ -5,10 +5,9 @@ from core.output.tts.tts_engine_noop import NoOpTTSEngine
 from core.output.tts.engines.espeak_engine import EspeakEngine
 
 # Day 41: Coqui engine is registered but NOT ACTIVE
-# Import is safe because engine is a pure stub (no audio, no models)
 from core.output.tts.engines.coqui_engine import CoquiTTSEngine
 
-# Day 41: Google Cloud TTS (TEMPORARY PRODUCTION BACKEND)
+# Day 41+: Google Cloud TTS (TEMPORARY PRODUCTION BACKEND)
 # IMPORTANT: Engine must NOT initialize at import time
 from core.output.tts.engines.google_tts_engine import GoogleTTSEngine
 
@@ -36,24 +35,47 @@ class TTSEngineRegistry:
     #   - Callable[[], TTSEngine]  (production)
     #   - TTSEngine instance       (tests / monkeypatching)
     _ENGINES: Dict[str, Union[Callable[[], TTSEngine], TTSEngine]] = {
+        # -------------------------------------------------
         # 🔇 SAFE DEFAULTS
+        # -------------------------------------------------
         "disabled": lambda: NoOpTTSEngine(),
         "noop": lambda: NoOpTTSEngine(),
 
+        # -------------------------------------------------
         # 🧪 LEGACY / TEST VOICE
+        # -------------------------------------------------
         "kakora": lambda: EspeakEngine("hi"),
 
-        # 🟣 REAL VOICE PIPELINE (LOCKED — DAY 41)
+        # -------------------------------------------------
+        # 🟣 OFFLINE PIPELINE (LOCKED — DAY 41)
+        # -------------------------------------------------
         "coqui": lambda: CoquiTTSEngine(),
 
-        # 🔵 TEMPORARY PRODUCTION (GOOGLE CLOUD TTS)
+        # -------------------------------------------------
+        # 🔵 GOOGLE CLOUD TTS (TEMPORARY PRODUCTION BACKEND)
+        # -------------------------------------------------
+
+        # Low-level explicit voices
         "google_hi_male": lambda: GoogleTTSEngine(
             language_code="hi-IN",
-            voice_name="hi-IN-Standard-B",
+            voice_name="hi-IN-Wavenet-D",
         ),
         "google_hi_female": lambda: GoogleTTSEngine(
             language_code="hi-IN",
-            voice_name="hi-IN-Standard-A",
+            voice_name="hi-IN-Wavenet-C",
+        ),
+
+        # -------------------------------------------------
+        # 👤 PERSONA-BOUND ALIASES (READABLE, STABLE)
+        # -------------------------------------------------
+        # These are the keys used by voice_routing.py
+        "google_rudra": lambda: GoogleTTSEngine(
+            language_code="hi-IN",
+            voice_name="hi-IN-Wavenet-D",
+        ),
+        "google_maahi": lambda: GoogleTTSEngine(
+            language_code="hi-IN",
+            voice_name="hi-IN-Wavenet-C",
         ),
     }
 

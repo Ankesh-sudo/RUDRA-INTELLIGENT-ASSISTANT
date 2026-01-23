@@ -15,9 +15,10 @@ class PermissionRegistry:
 
     Design principles:
     - Scope-based (not intent-based)
-    - Only DANGEROUS capabilities require permission
-    - Safe UI actions require NO permission
-    - Stateless regarding execution
+    - ONLY dangerous capabilities require permission
+    - App launches are SAFE by default
+    - Terminal UI ≠ command execution
+    - Unknown actions default to SAFE
     """
 
     # -------------------------------------------------
@@ -25,12 +26,14 @@ class PermissionRegistry:
     # -------------------------------------------------
     _REGISTRY = {
         # -----------------------------
-        # 🟢 SAFE UI / USER-LEVEL ACTIONS
+        # 🟢 SAFE UI / APP LAUNCH
         # -----------------------------
-        # Explicitly NO permission required
+        # No permission required
         "OPEN_APP": set(),
         "OPEN_BROWSER": set(),
+        "OPEN_YOUTUBE": set(),
         "OPEN_FILE_MANAGER": set(),
+        "OPEN_TERMINAL": set(),   # 🔒 UI only, NOT execution
 
         # -----------------------------
         # 🟢 SAFE SYSTEM INSPECTION
@@ -38,9 +41,8 @@ class PermissionRegistry:
         "SYSTEM_INFO": set(),
 
         # -----------------------------
-        # 🔴 TERMINAL / COMMAND EXECUTION
+        # 🔴 COMMAND EXECUTION (DANGEROUS)
         # -----------------------------
-        "OPEN_TERMINAL": {TERMINAL_EXEC},
         "RUN_COMMAND": {TERMINAL_EXEC},
 
         # -----------------------------
@@ -74,8 +76,8 @@ class PermissionRegistry:
         """
         Return required scopes for an action.
 
-        Unknown actions default to SAFE (no scopes),
-        forcing explicit opt-in for dangerous behavior.
+        Unknown actions default to SAFE (no scopes).
+        This forces explicit opt-in for dangerous behavior.
         """
         return set(cls._REGISTRY.get(action_type, set()))
 

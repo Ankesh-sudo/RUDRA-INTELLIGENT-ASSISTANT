@@ -20,7 +20,7 @@ from core.control.global_interrupt import GLOBAL_INTERRUPT
 from core.os.executor.guarded_executor import GuardedExecutor
 from core.os.action_spec import ActionSpec
 
-# App name → executable resolution (NO execution here)
+# App name → executable resolution
 from core.system.app_registry import AppRegistry
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------
 REQUIRED_ARGS = {
     "open_app": ["app_name"],
-    "open_terminal": ["command"],
+    "run_command": ["command"],
     "list_files": ["path"],
     "open_file": ["filename"],
     "system_info": [],
@@ -141,13 +141,14 @@ class ActionExecutor:
         }
 
     # -------------------------------------------------
-    # OS ACTION MAPPING — CONTRACT-CLEAN
+    # OS ACTION MAPPING — FIXED & COMPLETE
     # -------------------------------------------------
     def _execute_os_action(self, intent: Intent, args: Dict[str, Any]):
 
-        # ---------------- OPEN APPLICATION (SAFE) ----------------
-        if intent == Intent.OPEN_APP:
-            resolved_app = AppRegistry.resolve(args["app_name"])
+        # ---------------- OPEN APPLICATION ----------------
+        if intent in {Intent.OPEN_APP, Intent.OPEN_TERMINAL}:
+            app_name = args.get("app_name", "terminal")
+            resolved_app = AppRegistry.resolve(app_name)
 
             spec = ActionSpec(
                 action_type="OPEN_APP",
@@ -158,12 +159,43 @@ class ActionExecutor:
                 destructive=False,
                 supports_undo=False,
                 requires_preview=False,
-                required_scopes=set(),   # ✅ NO PERMISSION REQUIRED
+                required_scopes=set(),  # ✅ SAFE
             )
-
             return self.guarded_executor.execute(spec)
 
-        # ---------------- SYSTEM INFO (SAFE) ----------------
+        # ---------------- OPEN BROWSER / YOUTUBE ----------------
+        if intent in {Intent.OPEN_BROWSER, Intent.OPEN_YOUTUBE}:
+            url = "https://www.youtube.com" if intent == Intent.OPEN_YOUTUBE else None
+
+            spec = ActionSpec(
+                action_type="OPEN_BROWSER",
+                category="WEB",
+                target=url or "browser",
+                parameters={"url": url},
+                risk_level="LOW",
+                destructive=False,
+                supports_undo=False,
+                requires_preview=False,
+                required_scopes=set(),  # ✅ SAFE
+            )
+            return self.guarded_executor.execute(spec)
+
+        # ---------------- RUN TERMINAL COMMAND ----------------
+        if intent == Intent.RUN_COMMAND:
+            spec = ActionSpec(
+                action_type="RUN_COMMAND",
+                category="SYSTEM",
+                target="terminal",
+                parameters={"command": args["command"]},
+                risk_level="HIGH",
+                destructive=False,
+                supports_undo=False,
+                requires_preview=True,
+                required_scopes={"TERMINAL_EXEC"},
+            )
+            return self.guarded_executor.execute(spec)
+
+        # ---------------- SYSTEM INFO ----------------
         if intent == Intent.SYSTEM_INFO:
             spec = ActionSpec(
                 action_type="SYSTEM_INFO",
@@ -174,9 +206,8 @@ class ActionExecutor:
                 destructive=False,
                 supports_undo=False,
                 requires_preview=False,
-                required_scopes=set(),   # ✅ SAFE READ-ONLY
+                required_scopes=set(),
             )
-
             return self.guarded_executor.execute(spec)
 
         return None
