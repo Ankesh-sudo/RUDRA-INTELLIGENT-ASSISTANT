@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Any, FrozenSet
+from typing import Dict, Any, FrozenSet, Optional
 
 from core.os.permission.scopes import (
     ALL_SCOPES,
@@ -12,14 +12,22 @@ from core.os.permission.scopes import (
 # ==========================================================
 
 _ALLOWED_RISK_LEVELS = {"LOW", "MEDIUM", "HIGH"}
-_ALLOWED_ACTION_CATEGORIES = {"SYSTEM", "APP", "FILE"}
+_ALLOWED_ACTION_CATEGORIES = {"SYSTEM", "APP", "FILE", "OS_CONTROL"}
 
 _ACTION_CATEGORY_MAP = {
+    # App
     "OPEN_APP": "APP",
     "CLOSE_APP": "APP",
+
+    # System
     "SYSTEM_INFO": "SYSTEM",
+
+    # File
     "FILE_DELETE": "FILE",
     "FILE_READ": "FILE",
+
+    # OS Control (Day 61)
+    "OS_CONTROL": "OS_CONTROL",
 }
 
 # Legacy / backward-compat fields (IGNORED)
@@ -32,7 +40,7 @@ _LEGACY_FIELDS = {
 
 
 # ==========================================================
-# ACTION SPEC — PHASE 9 + DAY 55 (LOCKED)
+# ACTION SPEC — PHASE 9 (DAY 61 SAFE EXTENSION)
 # ==========================================================
 
 @dataclass(frozen=True, init=False)
@@ -43,16 +51,20 @@ class ActionSpec:
     Guarantees:
     - Registry agnostic
     - Execution agnostic
-    - Backward compatible (Day-55)
+    - Backward compatible (Day 55)
+    - OS_CONTROL supported (Day 61, stub-only)
     """
 
     action_type: str
     category: str
-    target: str | None
+    target: Optional[str]
     parameters: Dict[str, Any]
     risk_level: str
     required_scopes: FrozenSet[str]
     requires_confirmation: bool
+
+    # Day 61 (optional, OS_CONTROL only)
+    capability: Optional[Any]
 
     def __init__(self, **kwargs):
         allowed_fields = {
@@ -61,6 +73,7 @@ class ActionSpec:
             "parameters",
             "risk_level",
             "required_scopes",
+            "capability",          # Day 61
         } | _LEGACY_FIELDS
 
         unknown = set(kwargs.keys()) - allowed_fields
@@ -73,6 +86,7 @@ class ActionSpec:
             parameters = kwargs.get("parameters", {})
             risk_level = kwargs["risk_level"]
             required_scopes = kwargs["required_scopes"]
+            capability = kwargs.get("capability")
         except KeyError as e:
             raise ValueError(f"Missing required field: {e.args[0]}")
 
@@ -119,6 +133,21 @@ class ActionSpec:
         requires_confirmation = risk_level == "HIGH"
 
         # --------------------------------------------------
+        # DAY 61 — OS_CONTROL VALIDATION (SAFE ONLY)
+        # --------------------------------------------------
+
+        if category == "OS_CONTROL":
+            if capability is None:
+                raise ValueError(
+                    "OS_CONTROL actions require a capability field"
+                )
+        else:
+            if capability is not None:
+                raise ValueError(
+                    "capability is only valid for OS_CONTROL actions"
+                )
+
+        # --------------------------------------------------
         # FREEZE (IMMUTABLE)
         # --------------------------------------------------
 
@@ -133,6 +162,12 @@ class ActionSpec:
         object.__setattr__(
             self, "requires_confirmation", requires_confirmation
         )
+        object.__setattr__(self, "capability", capability)
+
+    # --------------------------------------------------
+    # BACKWARD-COMPAT PROPERTY
+    # --------------------------------------------------
+
     @property
     def destructive(self) -> bool:
         return bool(self.requires_confirmation)
