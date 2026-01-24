@@ -73,7 +73,7 @@ class PhrasingAdapter:
 
 
 # -------------------------------------------------------------------
-# DAY 65 — MAAHI TEXT LAYER (STRICTLY PRESENTATION ONLY)
+# DAY 65–66 — MAAHI TEXT LAYER (PRESENTATION ONLY)
 # -------------------------------------------------------------------
 
 class MaahiTextAdapter:
@@ -89,11 +89,20 @@ class MaahiTextAdapter:
     """
 
     _PHRASE_MAP = {
-        "CONFIRM_ACTION": "Okay Boss, doing it now.",
-        "ACTION_COMPLETE": "Done, Boss.",
-        "ACTION_FAILED": "Boss, that didn’t work.",
+        # Polished confirmations
+        "CONFIRM_ACTION": "Got it, Boss. Doing it now.",
+
+        # Polished success
+        "ACTION_COMPLETE": "All set, Boss.",
+
+        # Polished failure (no explanation added)
+        "ACTION_FAILED": "Sorry Boss, that didn’t work.",
+
+        # Polished confirmation request
         "WAITING_CONFIRM": "Boss, should I go ahead?",
-        "CANCELLED": "Alright Boss, cancelled.",
+
+        # Polished cancellation
+        "CANCELLED": "Okay Boss, I’ve cancelled it.",
     }
 
     @staticmethod

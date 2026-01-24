@@ -19,10 +19,6 @@ def make_envelope(
     )
 
 
-# -------------------------------------------------
-# Tests
-# -------------------------------------------------
-
 def test_persona_disabled_passthrough():
     envelope = make_envelope(
         persona_applied=False,
@@ -42,7 +38,7 @@ def test_persona_enabled_with_hint_applies_phrase():
 
     result = MaahiTextAdapter.apply(envelope)
 
-    assert result == "Okay Boss, doing it now."
+    assert result == "Got it, Boss. Doing it now."
 
 
 def test_persona_enabled_without_hint_passthrough():
@@ -76,7 +72,7 @@ def test_action_complete_phrase():
 
     result = MaahiTextAdapter.apply(envelope)
 
-    assert result == "Done, Boss."
+    assert result == "All set, Boss."
 
 
 def test_action_failed_phrase():
@@ -88,7 +84,7 @@ def test_action_failed_phrase():
 
     result = MaahiTextAdapter.apply(envelope)
 
-    assert result == "Boss, that didn’t work."
+    assert result == "Sorry Boss, that didn’t work."
 
 
 def test_cancelled_phrase():
@@ -100,7 +96,7 @@ def test_cancelled_phrase():
 
     result = MaahiTextAdapter.apply(envelope)
 
-    assert result == "Alright Boss, cancelled."
+    assert result == "Okay Boss, I’ve cancelled it."
 
 
 def test_canonical_text_hash_unchanged():
