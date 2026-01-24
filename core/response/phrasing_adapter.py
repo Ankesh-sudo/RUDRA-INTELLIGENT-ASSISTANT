@@ -1,13 +1,16 @@
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from core.memory.influence.preference_schema import PreferenceInfluence, PreferenceType
 from core.memory.influence.weighting import InfluenceWeight
+from core.response.final_envelope import FinalResponseEnvelope
 
 
 class PhrasingAdapter:
     """
     Applies soft, non-authoritative phrasing adjustments
     based on preference influence.
+
+    ⚠ This adapter does NOT implement persona behavior.
     """
 
     @staticmethod
@@ -38,7 +41,7 @@ class PhrasingAdapter:
                 adapted = PhrasingAdapter._apply_format(adapted, influence.value)
                 explanations.append(influence.explain())
 
-            # LANGUAGE + THEME intentionally ignored for now (safe no-op)
+            # LANGUAGE + THEME intentionally ignored (safe no-op)
 
         if weight:
             explanations.append(weight.explain())
@@ -58,7 +61,7 @@ class PhrasingAdapter:
     @staticmethod
     def _apply_verbosity(text: str, verbosity: str) -> str:
         if verbosity == "low":
-            return text.split(".")[0] + "."
+            return text.split(".")[0].strip() + "."
         return text
 
     @staticmethod
@@ -67,3 +70,54 @@ class PhrasingAdapter:
             sentences = [s.strip() for s in text.split(".") if s.strip()]
             return "\n".join(f"- {s}." for s in sentences)
         return text
+
+
+# -------------------------------------------------------------------
+# DAY 65 — MAAHI TEXT LAYER (STRICTLY PRESENTATION ONLY)
+# -------------------------------------------------------------------
+
+class MaahiTextAdapter:
+    """
+    Text-only persona phrasing adapter.
+
+    HARD RULES:
+    - NO logic
+    - NO memory
+    - NO permissions
+    - NO OS awareness
+    - NO meaning change
+    """
+
+    _PHRASE_MAP = {
+        "CONFIRM_ACTION": "Okay Boss, doing it now.",
+        "ACTION_COMPLETE": "Done, Boss.",
+        "ACTION_FAILED": "Boss, that didn’t work.",
+        "WAITING_CONFIRM": "Boss, should I go ahead?",
+        "CANCELLED": "Alright Boss, cancelled.",
+    }
+
+    @staticmethod
+    def apply(envelope: FinalResponseEnvelope) -> str:
+        """
+        Returns final user-visible text.
+
+        Canonical text remains envelope.final_text.
+        """
+        # Persona not applied → passthrough
+        if not envelope.persona_applied:
+            return envelope.final_text
+
+        # No hint → passthrough
+        if not envelope.persona_hint:
+            return envelope.final_text
+
+        # Deterministic lookup only
+        phrased = MaahiTextAdapter._PHRASE_MAP.get(
+            envelope.persona_hint
+        )
+
+        # Unknown hint → passthrough
+        if not phrased:
+            return envelope.final_text
+
+        return phrased
