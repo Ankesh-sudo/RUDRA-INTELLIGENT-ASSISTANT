@@ -1,4 +1,16 @@
-from core.control.interrupt_controller import InterruptController
+from enum import Enum, auto
 
-# Single global interrupt instance
-GLOBAL_INTERRUPT = InterruptController()
+
+class GlobalInterrupt(Enum):
+    """
+    Global interrupt states.
+
+    PURE ENUM.
+    No controller imports.
+    No logic.
+    """
+
+    IGNORE = auto()    # normal execution
+    SOFT = auto()      # pause
+    RESTART = auto()   # restart from beginning
+    HARD = auto()      # immediate stop
