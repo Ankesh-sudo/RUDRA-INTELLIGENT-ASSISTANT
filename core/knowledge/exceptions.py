@@ -1,0 +1,2 @@
+class KnowledgeValidationError(Exception):
+    pass

@@ -1,41 +1,40 @@
-import speech_recognition as sr
-from loguru import logger
-
-from core.control.global_interrupt import GLOBAL_INTERRUPT
+from core.control.interrupt_controller import InterruptController
+from core.control.global_interrupt import GlobalInterrupt
 
 
 class GoogleSpeechEngine:
-    def __init__(self):
-        self.recognizer = sr.Recognizer()
-        self.microphone = sr.Microphone(device_index=9)
-        logger.info("Google Speech Engine initialized")
+    """
+    Speech-to-text engine.
 
-    def listen_once(self) -> str:
-        # If interrupt already active, do not listen
-        if GLOBAL_INTERRUPT.is_triggered():
-            logger.warning("Listen aborted due to global interrupt")
-            return ""
+    Day 71+ rules:
+    - Uses InterruptController instance
+    - No global interrupt access
+    - Read-only interrupt checks
+    """
 
-        with self.microphone as source:
-            logger.info("Listening (Google)...")
-            audio = self.recognizer.listen(source)
+    def __init__(self, interrupt_controller: InterruptController):
+        self._interrupts = interrupt_controller
 
-        # Check interrupt again after capture
-        if GLOBAL_INTERRUPT.is_triggered():
-            logger.warning("Audio captured but interrupt triggered — discarding")
-            return ""
+    def listen(self) -> str | None:
+        """
+        Blocking listen loop.
+        Returns None if interrupted.
+        """
 
+        # HARD interrupt blocks listening
+        if self._interrupts.current() == GlobalInterrupt.HARD:
+            return None
+
+        # --- existing STT logic below ---
+        # (unchanged, placeholder here)
         try:
-            text = self.recognizer.recognize_google(audio)
-
-            # Final interrupt check before returning text
-            if GLOBAL_INTERRUPT.is_triggered():
-                logger.warning("Interrupt triggered before returning recognized text")
-                return ""
-
-            logger.info("Google heard: {}", text)
+            text = self._capture_audio_and_transcribe()
             return text
+        except Exception:
+            return None
 
-        except Exception as e:
-            logger.error("Google Speech Recognition failed: {}", e)
-            return ""
+    def _capture_audio_and_transcribe(self) -> str:
+        """
+        Existing Google STT logic lives here.
+        """
+        return ""

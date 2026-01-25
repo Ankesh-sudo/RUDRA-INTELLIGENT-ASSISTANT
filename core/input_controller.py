@@ -3,43 +3,65 @@ from loguru import logger
 
 from core.speech.google_engine import GoogleSpeechEngine
 from core.speech.wake_word import contains_wake_word
-from core.control.global_interrupt import GLOBAL_INTERRUPT
+from core.control.interrupt_controller import InterruptController
+from core.control.global_interrupt import GlobalInterrupt
 
 
 class InputController:
-    def __init__(self):
-        self.speech = GoogleSpeechEngine()
-        self.active = False
-        self.last_active_time = 0
-        self.ACTIVE_TIMEOUT = 45
+    """
+    Handles microphone input and wake-word logic.
 
-    def reset_execution_state(self):
+    Day 71+ rules:
+    - No global interrupt access
+    - Uses injected InterruptController
+    - No memory or persona access
+    """
+
+    ACTIVE_TIMEOUT = 45  # seconds
+
+    def __init__(self, interrupt_controller: InterruptController):
+        self._interrupts = interrupt_controller
+        self.speech = GoogleSpeechEngine(self._interrupts)
+
+        self.active = False
+        self.last_active_time = 0.0
+
+    def reset_execution_state(self) -> None:
         """
         Reset ONLY execution-related state.
-        Memory, learning, and context must remain untouched.
+        Memory, learning, and dialogue context remain untouched.
         """
-        logger.warning("Execution state reset due to global interrupt")
+        logger.warning("Execution state reset due to HARD interrupt")
         self.active = False
-        self.last_active_time = 0
+        self.last_active_time = 0.0
 
     def read(self) -> str:
-        # 🔴 Abort immediately if interrupt already active
-        if GLOBAL_INTERRUPT.is_triggered():
-            logger.debug("Input read aborted due to global interrupt")
+        """
+        Blocking input read.
+        Returns empty string if interrupted or inactive.
+        """
+
+        # 🔴 Abort immediately if HARD interrupt already active
+        if self._interrupts.current() == GlobalInterrupt.HARD:
+            logger.debug("Input read aborted due to HARD interrupt")
             return ""
 
-        now = time.time()
-
-        # Only ask for ENTER if assistant is sleeping
+        # Ask for ENTER only when sleeping
         if not self.active:
             input("Press ENTER and speak...")
 
-        text = self.speech.listen_once()
+        # --- Primary path: Speech ---
+        text = self.speech.listen()
         logger.debug("Raw speech: {}", text)
 
+        # 🔁 FALLBACK: Keyboard input (temporary, safe)
+        if not text:
+            text = input("You (keyboard fallback) > ").strip()
+
         # Interrupt may occur during listening
-        if GLOBAL_INTERRUPT.is_triggered():
-            logger.debug("Interrupt triggered after listening")
+        if self._interrupts.current() == GlobalInterrupt.HARD:
+            logger.debug("HARD interrupt triggered after listening")
+            self.reset_execution_state()
             return ""
 
         if not text:
@@ -57,7 +79,11 @@ class InputController:
             self.active = True
             self.last_active_time = now
 
-            clean_text = text.lower().replace("rudra", "").strip()
+            clean_text = (
+                text.lower()
+                .replace("rudra", "")
+                .strip()
+            )
 
             if not clean_text:
                 print("Rudra > Yes?")
