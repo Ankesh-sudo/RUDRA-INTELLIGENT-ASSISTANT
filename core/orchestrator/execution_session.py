@@ -1,4 +1,5 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
+import uuid
 
 from .execution_state import SessionState, StepState
 from .session_context import SessionContext
@@ -48,14 +49,19 @@ class ExecutionSession:
     - No execution happens here
     - No permission evaluation
     - No OS calls
+    - Observation-safe (read-only)
     """
 
-    def __init__(self, session_id: str, working_memory=None):
-        self.session_id = session_id
+    def __init__(self, session_id: Optional[str] = None, working_memory=None):
+        # DAY 69 — default-safe session id
+        self.session_id = session_id or f"session-{uuid.uuid4().hex[:8]}"
         self.state = SessionState.CREATED
         self.steps: List[ExecutionStep] = []
         self.context = SessionContext(working_memory) if working_memory else None
         self.abort_requested = False
+
+        # Observation sink (read-only)
+        self._observations: List[Tuple[str, str]] = []
 
     # -----------------------------
     # Planning attachment
@@ -104,6 +110,19 @@ class ExecutionSession:
                 step.skip("session_cancelled")
 
     # -----------------------------
+    # DAY 69 — Observation handling
+    # -----------------------------
+
+    def attach_observation(self, kind: str, value: str) -> None:
+        """
+        Attach a read-only observation to the session.
+        """
+        self._observations.append((kind, value))
+
+    def observations(self) -> List[Tuple[str, str]]:
+        return list(self._observations)
+
+    # -----------------------------
     # Introspection / Explain
     # -----------------------------
 
@@ -125,5 +144,9 @@ class ExecutionSession:
                     "error": step.error,
                 }
                 for step in self.steps
+            ],
+            "observations": [
+                {"type": kind, "value": value}
+                for kind, value in self._observations
             ],
         }
