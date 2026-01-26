@@ -5,6 +5,38 @@ from core.influence.preference_scope import PreferenceScope
 from core.influence.preference_preview import PreferencePreview
 
 
+# =================================================
+# STEP 4 — CORE RESPONSE FORMATTING (SAFE ADDITION)
+# =================================================
+
+def format_section(
+    title: str,
+    body: str,
+    footer: Optional[str] = None,
+) -> str:
+    """
+    Deterministic, assistant-facing formatter.
+    Used by ExplainSurface ONLY.
+
+    This does NOT touch influence, preferences, or traces.
+    """
+
+    lines: List[str] = []
+    lines.append(title)
+    lines.append("-" * len(title))
+    lines.append(body.strip())
+
+    if footer:
+        lines.append("")
+        lines.append(footer.strip())
+
+    return "\n".join(lines)
+
+
+# =================================================
+# EXISTING TRACE / INFLUENCE FORMATTERS (UNCHANGED)
+# =================================================
+
 # ---------- Core Formatting ----------
 
 def format_core_trace(events: list) -> List[str]:
@@ -100,7 +132,7 @@ def format_influence_trace(events: list) -> List[str]:
                     f"Memory influence evaluated: {e.get('count', 0)} signals generated"
                 )
 
-    # ---- 2. Preference resolution (Day 29.1 wording refined) ----
+    # ---- 2. Preference resolution ----
     for e in events:
         kind = e.get("kind")
 
@@ -121,7 +153,7 @@ def format_influence_trace(events: list) -> List[str]:
                 f"Preference unavailable: {e.get('key')} (reason: {e.get('reason')})"
             )
 
-    # ---- 3. Preference preview & confirmation (Day 29.2 + 29.3 wording) ----
+    # ---- 3. Preference preview & confirmation ----
     for e in events:
         kind = e.get("kind")
 
@@ -174,7 +206,6 @@ def format_influence_trace(events: list) -> List[str]:
         elif kind == "output_preference_session_expired":
             lines.append("Preference usage ended with the session.")
 
-    # ---- 5. Explicit no-effect summary (Day 29.3 wording) ----
     if preference_system_seen and not applied_any:
         lines.append("This reply was not changed by any preferences.")
 
@@ -199,7 +230,7 @@ def apply_output_preferences(
     if output_prefs.verbosity == "short":
         result = result.split(".")[0].strip() + "."
     elif output_prefs.verbosity == "long":
-        result = result  # explicit no-op
+        result = result
 
     if output_prefs.format == "bullet":
         result = "- " + result.replace(". ", "\n- ")

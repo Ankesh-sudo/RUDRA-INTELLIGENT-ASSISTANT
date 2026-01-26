@@ -1,4 +1,6 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
+
+from core.explain.formatter import format_section
 
 
 class ExplainSurface:
@@ -33,11 +35,59 @@ class ExplainSurface:
         return cls([line])
 
     # -------------------------------------------------
+    # STEP 4 — FORMATTED RESPONSE CONSTRUCTORS
+    # -------------------------------------------------
+
+    @classmethod
+    def from_knowledge(
+        cls,
+        payload: Union[str, Dict[str, Any]],
+    ) -> "ExplainSurface":
+        """
+        Accepts:
+        - str  → already formatted knowledge text (CURRENT SYSTEM)
+        - dict → structured knowledge payload (FUTURE SYSTEM)
+
+        Dict payload shape:
+        {
+            "topic": str,
+            "answer": str,
+            "citation": Optional[str]
+        }
+        """
+
+        # ✅ CURRENT SYSTEM (string payload)
+        if isinstance(payload, str):
+            return cls(payload.splitlines())
+
+        # ✅ FUTURE SYSTEM (structured payload)
+        text = format_section(
+            title=payload.get("topic", "Knowledge").title(),
+            body=payload.get("answer", ""),
+            footer=(
+                f"Source: {payload['citation']}"
+                if payload.get("citation")
+                else None
+            ),
+        )
+        return cls(text.splitlines())
+
+    @classmethod
+    def from_action(cls, message: str) -> "ExplainSurface":
+        """
+        Action explanations remain simple in Step 4.
+        """
+        return cls.single(message)
+
+    # -------------------------------------------------
     # Day 55 — RESPONSE HELPERS (DICT PAYLOADS)
     # -------------------------------------------------
 
     @staticmethod
-    def info(message: str, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    def info(
+        message: str,
+        payload: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
         return {
             "type": "info",
             "message": message,

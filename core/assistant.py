@@ -10,17 +10,14 @@ from core.intelligence.intent_scorer import score_intents, pick_best_intent
 from core.intelligence.confidence_refiner import refine_confidence
 from core.actions.action_executor import ActionExecutor
 
-from core.control.global_interrupt import GLOBAL_INTERRUPT
-from core.control.interrupt_words import INTERRUPT_KEYWORDS
-from core.control.interrupt_policy import INTERRUPT_POLICY
+# 🧠 Explain Surface (STEP 4)
+from core.explain.explain_surface import ExplainSurface
 
-from core.memory.follow_up_resolver import FollowUpResolver
-from core.memory.short_term_memory import ShortTermMemory
-
-# 🧠 Knowledge bootstrap (CORRECT SYMBOL)
+# 🧠 Knowledge bootstrap
 from core.knowledge.bootstrap import build_knowledge_engine
 
 # 🔵 Memory
+from core.memory.short_term_memory import ShortTermMemory
 from core.memory.usage_mode import MemoryUsageMode
 from core.memory.trace_sink import MemoryTraceSink
 from core.memory.ltm.promotion_evaluator import MemoryPromotionEvaluator
@@ -63,14 +60,7 @@ IDENTITY_TEXT = (
     "I execute actions reliably and explain what I do."
 )
 
-
 INTENT_CONFIDENCE_THRESHOLD = 0.65
-
-CLARIFICATION_MESSAGES = [
-    "I’m not sure what you meant. Can you rephrase?",
-    "Could you explain that a bit more?",
-    "I didn’t fully get that. What would you like to do?",
-]
 
 
 class Assistant:
@@ -105,7 +95,16 @@ class Assistant:
     # =================================================
     # SINGLE RESPONSE GATE (STEP 1)
     # =================================================
-    def respond(self, text: str) -> str:
+    def respond(self, surface: ExplainSurface | str) -> str:
+        """
+        Single authoritative output gate.
+        Step 4 allows ExplainSurface OR raw string.
+        """
+        if isinstance(surface, ExplainSurface):
+            text = surface.as_text()
+        else:
+            text = str(surface)
+
         print(f"Rudra > {text}")
         return text
 
@@ -113,31 +112,44 @@ class Assistant:
     # STEP 2 — NON-EXECUTION HANDLERS
     # =================================================
     def handle_help(self):
-        return self.respond(HELP_TEXT)
+        return self.respond(ExplainSurface.single(HELP_TEXT))
 
     def handle_capabilities(self):
-        return self.respond(CAPABILITIES_TEXT)
+        return self.respond(ExplainSurface.single(CAPABILITIES_TEXT))
 
     def handle_identity(self):
-        return self.respond(IDENTITY_TEXT)
+        return self.respond(ExplainSurface.single(IDENTITY_TEXT))
 
     # =================================================
     # STEP 3 — KNOWLEDGE HANDLER (DHARMA)
     # =================================================
     def handle_dharma(self):
         if not self.knowledge:
-            return self.respond("Knowledge system is not available right now.")
+            return self.respond(
+                ExplainSurface.single(
+                    "Knowledge system is not available right now."
+                )
+            )
 
         try:
-            answer = self.knowledge.query("dharma")
+            payload = self.knowledge.query("dharma")
         except Exception:
             logger.exception("Knowledge engine error")
-            return self.respond("I couldn't retrieve knowledge about dharma right now.")
+            return self.respond(
+                ExplainSurface.single(
+                    "I couldn't retrieve knowledge about dharma right now."
+                )
+            )
 
-        if not answer:
-            return self.respond("I don't have enough information about dharma yet.")
+        if not payload:
+            return self.respond(
+                ExplainSurface.single(
+                    "I don't have enough information about dharma yet."
+                )
+            )
 
-        return self.respond(answer)
+        surface = ExplainSurface.from_knowledge(payload)
+        return self.respond(surface)
 
     # =================================================
     # CORE LOOP
@@ -149,7 +161,7 @@ class Assistant:
 
         validation = self.input_validator.validate(raw_text)
         if not validation["valid"]:
-            self.respond("Please repeat.")
+            self.respond(ExplainSurface.single("Please repeat."))
             return
 
         clean_text = validation["clean_text"]
@@ -183,18 +195,23 @@ class Assistant:
         )
 
         if confidence < INTENT_CONFIDENCE_THRESHOLD:
-            return self.respond("I’m not sure what you meant.")
+            return self.respond(
+                ExplainSurface.single("I’m not sure what you meant.")
+            )
 
         save_message("user", clean_text, intent.value)
 
         if intent == Intent.EXIT:
-            self.respond("Goodbye!")
+            self.respond(ExplainSurface.single("Goodbye!"))
             self.running = False
             return
 
         result = self.action_executor.execute(intent, clean_text, confidence)
         response = result.get("message", "Done.")
-        self.respond(response)
+
+        surface = ExplainSurface.from_action(response)
+        self.respond(surface)
+
         save_message("assistant", response, intent.value)
 
     def run(self):
