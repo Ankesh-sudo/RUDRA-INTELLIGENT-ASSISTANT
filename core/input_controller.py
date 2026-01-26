@@ -49,14 +49,23 @@ class InputController:
             logger.debug("Input read aborted due to global interrupt")
             return ""
 
-        # Only ask for ENTER if assistant is sleeping
-        if not self.active:
-            input("Press ENTER and speak...")
+        # -------------------------------------------------
+        # KEYBOARD + SPEECH INPUT (TESTING FRIENDLY)
+        # -------------------------------------------------
+        print("Press ENTER and speak (or type and press ENTER)...")
+        typed = input().strip()
 
+        # ✅ Keyboard fallback (PRIMARY for now)
+        if typed:
+            logger.debug("Keyboard input: {}", typed)
+            return typed
+
+        # -------------------------------------------------
+        # SPEECH FALLBACK
+        # -------------------------------------------------
         text = self._listen_safely()
         logger.debug("Raw speech: {}", text)
 
-        # Interrupt may occur during listening
         if GLOBAL_INTERRUPT.is_active():
             logger.debug("Interrupt triggered after listening")
             return ""

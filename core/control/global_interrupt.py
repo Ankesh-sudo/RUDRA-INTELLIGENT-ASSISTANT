@@ -2,9 +2,6 @@ from enum import Enum, auto
 
 
 class GlobalInterruptState(Enum):
-    """
-    Global interrupt states.
-    """
     IGNORE = auto()
     SOFT = auto()
     RESTART = auto()
@@ -32,7 +29,10 @@ class GlobalInterruptController:
     def is_active(self) -> bool:
         return self.state != GlobalInterruptState.IGNORE
 
-    # 🔧 COMPATIBILITY METHOD (REQUIRED)
+    # 🔁 Legacy compatibility
+    def is_triggered(self) -> bool:
+        return self.is_active()
+
     def current(self) -> GlobalInterruptState:
         return self.state
 

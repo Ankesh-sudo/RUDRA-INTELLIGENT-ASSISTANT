@@ -14,7 +14,6 @@ from core.control.global_interrupt import GLOBAL_INTERRUPT
 from core.control.interrupt_words import INTERRUPT_KEYWORDS
 from core.control.interrupt_policy import INTERRUPT_POLICY
 
-from core.memory.working_memory import WorkingMemory
 from core.memory.context_pack import ContextPackBuilder
 from core.memory.follow_up_resolver import FollowUpResolver
 from core.memory.short_term_memory import ShortTermMemory
@@ -26,13 +25,39 @@ from core.memory.ltm.promotion_evaluator import MemoryPromotionEvaluator
 from core.memory.classifier import MemoryClassifier
 from core.memory.memory_manager import MemoryManager
 
-# 🔊 TTS
+# 🔊 TTS (still disabled for responses)
 from core.output.tts.tts_registry import TTSEngineRegistry
 from core.output.tts.voice_routing import PERSONA_VOICE_MAP
 
 # 🔐 Permissions
 from core.os.permission.consent_store import ConsentStore
 from core.os.permission.permission_registry import PermissionRegistry
+
+
+# =================================================
+# STEP 2 — STATIC NON-EXECUTION RESPONSES
+# =================================================
+HELP_TEXT = (
+    "I can help with system actions, notes, and basic queries.\n"
+    "Try commands like:\n"
+    "- help\n"
+    "- what can you do\n"
+    "- who are you\n"
+    "- exit"
+)
+
+CAPABILITIES_TEXT = (
+    "My current capabilities include:\n"
+    "- Opening applications\n"
+    "- Opening websites (safe & whitelisted)\n"
+    "- Taking simple notes\n"
+    "- Safe terminal previews"
+)
+
+IDENTITY_TEXT = (
+    "I am Rudra — a deterministic, safety-first assistant.\n"
+    "I execute actions reliably and explain what I do."
+)
 
 
 INTENT_CONFIDENCE_THRESHOLD = 0.65
@@ -70,34 +95,31 @@ class Assistant:
         self.memory_promotion_evaluator = MemoryPromotionEvaluator()
         self.memory_classifier = MemoryClassifier()
 
-        # -------------------------------------------------
-        # 🔊 TTS ENGINE RESOLUTION (FAIL-CLOSED)
-        # -------------------------------------------------
         engine_key = PERSONA_VOICE_MAP.get("maahi")
         self.tts_engine = (
             TTSEngineRegistry.get(engine_key) if engine_key else None
         )
 
-        # 🔐 Permission store (session-scoped)
         self.consent_store = ConsentStore()
 
     # =================================================
     # SINGLE RESPONSE GATE (STEP 1)
     # =================================================
     def respond(self, text: str) -> str:
-        """
-        Single authoritative response path.
-        STEP 1:
-        - Text only
-        - No persona
-        - No TTS routing
-        - No memory writes
-        """
-        if not isinstance(text, str):
-            text = str(text)
-
         print(f"Rudra > {text}")
         return text
+
+    # =================================================
+    # STEP 2 — NON-EXECUTION HANDLERS
+    # =================================================
+    def handle_help(self):
+        return self.respond(HELP_TEXT)
+
+    def handle_capabilities(self):
+        return self.respond(CAPABILITIES_TEXT)
+
+    def handle_identity(self):
+        return self.respond(IDENTITY_TEXT)
 
     # =================================================
     # UTIL
@@ -112,9 +134,6 @@ class Assistant:
             return "HARD"
         return INTERRUPT_POLICY.get(intent, "HARD")
 
-    # =================================================
-    # EMBEDDED INTERRUPT DETECTION
-    # =================================================
     def _detect_embedded_interrupt(self, tokens: list[str]) -> bool:
         for idx, token in enumerate(tokens):
             if token in INTERRUPT_KEYWORDS:
@@ -123,9 +142,6 @@ class Assistant:
                 return True
         return False
 
-    # =================================================
-    # INTERRUPT HANDLER (CONTROL PLANE — UNTOUCHED)
-    # =================================================
     def _handle_interrupt(self, source: str, intent: Intent | None):
         policy = self._get_interrupt_policy(intent)
         logger.warning(f"Interrupt triggered ({source}) | policy={policy}")
@@ -139,18 +155,10 @@ class Assistant:
         print("Rudra > Okay, stopped.")
         GLOBAL_INTERRUPT.clear()
 
-    # =================================================
-    # PERMISSION CONSENT LOOP (CONTROL PLANE — UNTOUCHED)
-    # =================================================
     def _handle_permission_request(self, intent: Intent) -> bool:
         scopes = PermissionRegistry.get_required_scopes(intent.value)
-        scope_list = ", ".join(scopes)
-
-        prompt = f"This action requires permission ({scope_list}). Allow?"
+        prompt = f"This action requires permission ({', '.join(scopes)}). Allow?"
         print(f"Rudra > {prompt}")
-
-        if self.tts_engine:
-            self.tts_engine.speak(prompt)
 
         reply = self.input.read().strip().lower()
         tokens = set(normalize_text(reply))
@@ -161,20 +169,12 @@ class Assistant:
             return True
 
         print("Rudra > Permission not granted.")
-        if self.tts_engine:
-            self.tts_engine.speak("Permission not granted.")
-
         return False
 
     # =================================================
     # CORE SINGLE CYCLE
     # =================================================
     def _cycle(self):
-        context_pack = ContextPackBuilder().build()
-        context_pack["stm_recent"] = self.stm.fetch_recent(
-            role="user", limit=3, min_confidence=0.70
-        )
-
         raw_text = self.input.read()
         if not raw_text:
             return
@@ -185,6 +185,27 @@ class Assistant:
             return
 
         clean_text = validation["clean_text"]
+
+        # -------------------------------------------------
+        # STEP 2 — RAW NON-EXECUTION COMMANDS (PRE-NLP)
+        # -------------------------------------------------
+        lowered = clean_text.lower().strip()
+
+        if lowered in {"help", "commands"}:
+            self.handle_help()
+            return
+
+        if lowered in {"what can you do", "capabilities"}:
+            self.handle_capabilities()
+            return
+
+        if lowered in {"who are you", "what are you"}:
+            self.handle_identity()
+            return
+
+        # -------------------------------------------------
+        # NLP / EXECUTION PIPELINE
+        # -------------------------------------------------
         tokens = normalize_text(clean_text)
 
         if self._detect_embedded_interrupt(tokens):
@@ -198,9 +219,7 @@ class Assistant:
         )
 
         if confidence < INTENT_CONFIDENCE_THRESHOLD or intent == Intent.UNKNOWN:
-            resolved = FollowUpResolver().resolve(
-                tokens=tokens, context_pack=context_pack
-            )
+            resolved = FollowUpResolver().resolve(tokens=tokens, context_pack={})
             if not resolved:
                 self.respond(self.next_clarification())
                 return
