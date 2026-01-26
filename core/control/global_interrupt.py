@@ -1,16 +1,41 @@
 from enum import Enum, auto
 
 
-class GlobalInterrupt(Enum):
+class GlobalInterruptState(Enum):
     """
     Global interrupt states.
+    """
+    IGNORE = auto()
+    SOFT = auto()
+    RESTART = auto()
+    HARD = auto()
 
-    PURE ENUM.
-    No controller imports.
-    No logic.
+
+# Backward compatibility alias
+GlobalInterrupt = GlobalInterruptState
+
+
+class GlobalInterruptController:
+    """
+    Global interrupt controller (singleton).
     """
 
-    IGNORE = auto()    # normal execution
-    SOFT = auto()      # pause
-    RESTART = auto()   # restart from beginning
-    HARD = auto()      # immediate stop
+    def __init__(self):
+        self.state = GlobalInterruptState.IGNORE
+
+    def trigger(self, state: GlobalInterruptState = GlobalInterruptState.HARD):
+        self.state = state
+
+    def clear(self):
+        self.state = GlobalInterruptState.IGNORE
+
+    def is_active(self) -> bool:
+        return self.state != GlobalInterruptState.IGNORE
+
+    # 🔧 COMPATIBILITY METHOD (REQUIRED)
+    def current(self) -> GlobalInterruptState:
+        return self.state
+
+
+# Singleton instance
+GLOBAL_INTERRUPT = GlobalInterruptController()

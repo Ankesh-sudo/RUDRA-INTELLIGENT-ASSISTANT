@@ -1,10 +1,11 @@
 """
 Action Executor
 Day 17.6 — Confidence Gating + Follow-up + Slot Recovery (FINAL)
+Day 18.1 — Global Interrupt Guard (READ-ONLY)
 Day 18.3 — Safe Cancel Hook (FINAL)
 Day 18.4 — Policy-Compatible (NO OWNERSHIP)
+
 Day 50 — OS Control Integration (GUARDED)
-Day 71+ — Instance-based Interrupt Guard (READ-ONLY)
 """
 
 import logging
@@ -13,9 +14,7 @@ from typing import Dict, Any, Optional, List
 from core.nlp.intent import Intent
 from core.nlp.argument_extractor import ArgumentExtractor
 from core.context.follow_up import FollowUpContext
-
-from core.control.interrupt_controller import InterruptController
-from core.control.global_interrupt import GlobalInterrupt
+from core.control.global_interrupt import GLOBAL_INTERRUPT
 
 # OS execution layer
 from core.os.executor.guarded_executor import GuardedExecutor
@@ -39,20 +38,7 @@ REQUIRED_ARGS = {
 
 
 class ActionExecutor:
-    """
-    Executes OS / system actions with strict safety guarantees.
-
-    Day 71+ rules:
-    - NO global interrupt usage
-    - InterruptController is injected
-    - Interrupt checks are READ-ONLY
-    """
-
-    def __init__(
-        self,
-        config=None,
-        interrupt_controller: InterruptController | None = None,
-    ):
+    def __init__(self, config=None):
         self.config = config
         self.argument_extractor = ArgumentExtractor(config)
         self.follow_up_context = FollowUpContext()
@@ -61,13 +47,10 @@ class ActionExecutor:
         self.min_confidence = 0.3
         self.action_history: List[Dict[str, Any]] = []
 
-        # 🔐 Interrupt authority (optional for backward safety)
-        self._interrupts = interrupt_controller
-
     # -------------------------------------------------
     # SAFE CANCEL
     # -------------------------------------------------
-    def cancel_pending(self) -> None:
+    def cancel_pending(self):
         self.follow_up_context.clear_context()
 
     # -------------------------------------------------
@@ -81,9 +64,8 @@ class ActionExecutor:
         replay_args: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
 
-        # 🔴 HARD INTERRUPT GUARD (READ-ONLY)
-        if self._interrupts and self._interrupts.current() == GlobalInterrupt.HARD:
-            logger.warning("Action cancelled due to HARD interrupt")
+        # 🔴 HARD INTERRUPT GUARD
+        if GLOBAL_INTERRUPT.is_triggered():
             return {
                 "success": False,
                 "message": "Action cancelled.",
@@ -177,7 +159,7 @@ class ActionExecutor:
                 destructive=False,
                 supports_undo=False,
                 requires_preview=False,
-                required_scopes=set(),
+                required_scopes=set(),  # ✅ SAFE
             )
             return self.guarded_executor.execute(spec)
 
@@ -194,7 +176,7 @@ class ActionExecutor:
                 destructive=False,
                 supports_undo=False,
                 requires_preview=False,
-                required_scopes=set(),
+                required_scopes=set(),  # ✅ SAFE
             )
             return self.guarded_executor.execute(spec)
 
