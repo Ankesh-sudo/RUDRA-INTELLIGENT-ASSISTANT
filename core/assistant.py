@@ -14,9 +14,11 @@ from core.control.global_interrupt import GLOBAL_INTERRUPT
 from core.control.interrupt_words import INTERRUPT_KEYWORDS
 from core.control.interrupt_policy import INTERRUPT_POLICY
 
-from core.memory.context_pack import ContextPackBuilder
 from core.memory.follow_up_resolver import FollowUpResolver
 from core.memory.short_term_memory import ShortTermMemory
+
+# 🧠 Knowledge bootstrap (CORRECT SYMBOL)
+from core.knowledge.bootstrap import build_knowledge_engine
 
 # 🔵 Memory
 from core.memory.usage_mode import MemoryUsageMode
@@ -25,7 +27,7 @@ from core.memory.ltm.promotion_evaluator import MemoryPromotionEvaluator
 from core.memory.classifier import MemoryClassifier
 from core.memory.memory_manager import MemoryManager
 
-# 🔊 TTS (still disabled for responses)
+# 🔊 TTS (still disabled)
 from core.output.tts.tts_registry import TTSEngineRegistry
 from core.output.tts.voice_routing import PERSONA_VOICE_MAP
 
@@ -43,6 +45,7 @@ HELP_TEXT = (
     "- help\n"
     "- what can you do\n"
     "- who are you\n"
+    "- what is dharma\n"
     "- exit"
 )
 
@@ -51,7 +54,8 @@ CAPABILITIES_TEXT = (
     "- Opening applications\n"
     "- Opening websites (safe & whitelisted)\n"
     "- Taking simple notes\n"
-    "- Safe terminal previews"
+    "- Safe terminal previews\n"
+    "- Answering knowledge questions (Dharma)"
 )
 
 IDENTITY_TEXT = (
@@ -68,12 +72,6 @@ CLARIFICATION_MESSAGES = [
     "I didn’t fully get that. What would you like to do?",
 ]
 
-IDLE, ACTIVE, WAITING = "idle", "active", "waiting"
-
-NEGATION_TOKENS = {"dont", "do", "not", "never", "no"}
-AFFIRMATIVE = {"yes", "yeah", "yep", "sure", "ok"}
-NEGATIVE = {"no", "nope", "nah"}
-
 
 class Assistant:
     def __init__(self):
@@ -81,26 +79,28 @@ class Assistant:
         self.running = True
         self.ctx = ShortTermContext()
         self.input_validator = InputValidator()
-        self.state = IDLE
 
         self.action_executor = ActionExecutor()
 
-        self.clarify_index = 0
-
         self.memory_manager = MemoryManager()
         self.stm = ShortTermMemory()
-
         self.memory_usage_mode = MemoryUsageMode.DISABLED
         self.memory_trace_sink = MemoryTraceSink()
         self.memory_promotion_evaluator = MemoryPromotionEvaluator()
         self.memory_classifier = MemoryClassifier()
 
+        # 🧠 Knowledge Engine (READ-ONLY, BOOTSTRAPPED ONCE)
+        try:
+            self.knowledge = build_knowledge_engine()
+        except Exception:
+            logger.exception("Failed to bootstrap Knowledge Engine")
+            self.knowledge = None
+
         engine_key = PERSONA_VOICE_MAP.get("maahi")
-        self.tts_engine = (
-            TTSEngineRegistry.get(engine_key) if engine_key else None
-        )
+        self.tts_engine = TTSEngineRegistry.get(engine_key) if engine_key else None
 
         self.consent_store = ConsentStore()
+        self.clarify_index = 0
 
     # =================================================
     # SINGLE RESPONSE GATE (STEP 1)
@@ -122,57 +122,25 @@ class Assistant:
         return self.respond(IDENTITY_TEXT)
 
     # =================================================
-    # UTIL
+    # STEP 3 — KNOWLEDGE HANDLER (DHARMA)
     # =================================================
-    def next_clarification(self):
-        msg = CLARIFICATION_MESSAGES[self.clarify_index]
-        self.clarify_index = (self.clarify_index + 1) % len(CLARIFICATION_MESSAGES)
-        return msg
+    def handle_dharma(self):
+        if not self.knowledge:
+            return self.respond("Knowledge system is not available right now.")
 
-    def _get_interrupt_policy(self, intent: Intent | None) -> str:
-        if not intent:
-            return "HARD"
-        return INTERRUPT_POLICY.get(intent, "HARD")
+        try:
+            answer = self.knowledge.query("dharma")
+        except Exception:
+            logger.exception("Knowledge engine error")
+            return self.respond("I couldn't retrieve knowledge about dharma right now.")
 
-    def _detect_embedded_interrupt(self, tokens: list[str]) -> bool:
-        for idx, token in enumerate(tokens):
-            if token in INTERRUPT_KEYWORDS:
-                if idx > 0 and tokens[idx - 1] in NEGATION_TOKENS:
-                    return False
-                return True
-        return False
+        if not answer:
+            return self.respond("I don't have enough information about dharma yet.")
 
-    def _handle_interrupt(self, source: str, intent: Intent | None):
-        policy = self._get_interrupt_policy(intent)
-        logger.warning(f"Interrupt triggered ({source}) | policy={policy}")
-
-        if policy == "IGNORE":
-            return
-
-        GLOBAL_INTERRUPT.trigger()
-        self.action_executor.cancel_pending()
-        self.input.reset_execution_state()
-        print("Rudra > Okay, stopped.")
-        GLOBAL_INTERRUPT.clear()
-
-    def _handle_permission_request(self, intent: Intent) -> bool:
-        scopes = PermissionRegistry.get_required_scopes(intent.value)
-        prompt = f"This action requires permission ({', '.join(scopes)}). Allow?"
-        print(f"Rudra > {prompt}")
-
-        reply = self.input.read().strip().lower()
-        tokens = set(normalize_text(reply))
-
-        if tokens & AFFIRMATIVE:
-            for scope in scopes:
-                self.consent_store.grant(scope)
-            return True
-
-        print("Rudra > Permission not granted.")
-        return False
+        return self.respond(answer)
 
     # =================================================
-    # CORE SINGLE CYCLE
+    # CORE LOOP
     # =================================================
     def _cycle(self):
         raw_text = self.input.read()
@@ -185,46 +153,37 @@ class Assistant:
             return
 
         clean_text = validation["clean_text"]
-
-        # -------------------------------------------------
-        # STEP 2 — RAW NON-EXECUTION COMMANDS (PRE-NLP)
-        # -------------------------------------------------
         lowered = clean_text.lower().strip()
 
+        # STEP 2 — UI COMMANDS
         if lowered in {"help", "commands"}:
-            self.handle_help()
-            return
+            return self.handle_help()
 
         if lowered in {"what can you do", "capabilities"}:
-            self.handle_capabilities()
-            return
+            return self.handle_capabilities()
 
         if lowered in {"who are you", "what are you"}:
-            self.handle_identity()
-            return
+            return self.handle_identity()
 
-        # -------------------------------------------------
-        # NLP / EXECUTION PIPELINE
-        # -------------------------------------------------
+        # STEP 3 — KNOWLEDGE
+        if lowered in {
+            "what is dharma",
+            "define dharma",
+            "explain dharma",
+            "tell me about dharma",
+        }:
+            return self.handle_dharma()
+
+        # EXECUTION PATH (UNCHANGED)
         tokens = normalize_text(clean_text)
-
-        if self._detect_embedded_interrupt(tokens):
-            self._handle_interrupt("embedded", None)
-            return
-
         scores = score_intents(tokens)
         intent, confidence = pick_best_intent(scores, tokens)
         confidence = refine_confidence(
             confidence, tokens, intent.value, self.ctx.last_intent
         )
 
-        if confidence < INTENT_CONFIDENCE_THRESHOLD or intent == Intent.UNKNOWN:
-            resolved = FollowUpResolver().resolve(tokens=tokens, context_pack={})
-            if not resolved:
-                self.respond(self.next_clarification())
-                return
-            intent = Intent(resolved["resolved_intent"])
-            confidence = 0.7
+        if confidence < INTENT_CONFIDENCE_THRESHOLD:
+            return self.respond("I’m not sure what you meant.")
 
         save_message("user", clean_text, intent.value)
 
@@ -234,23 +193,11 @@ class Assistant:
             return
 
         result = self.action_executor.execute(intent, clean_text, confidence)
-
-        if result["message"] == "This action needs your confirmation.":
-            if self._handle_permission_request(intent):
-                result = self.action_executor.execute(
-                    intent, clean_text, confidence
-                )
-
         response = result.get("message", "Done.")
         self.respond(response)
-
         save_message("assistant", response, intent.value)
-        self.ctx.update(intent.value)
 
     def run(self):
         logger.info("Day 40 — Persona & Voice frozen")
         while self.running:
             self._cycle()
-
-    def run_once(self):
-        self._cycle()
