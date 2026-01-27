@@ -13,6 +13,9 @@ from core.actions.action_executor import ActionExecutor
 # 🧠 Explain Surface (STEP 4)
 from core.explain.explain_surface import ExplainSurface
 
+# 🧠 Response Envelope (STEP 5)
+from core.response.final_envelope import FinalResponseEnvelope
+
 # 🧠 Knowledge bootstrap
 from core.knowledge.bootstrap import build_knowledge_engine
 
@@ -28,13 +31,8 @@ from core.memory.memory_manager import MemoryManager
 from core.output.tts.tts_registry import TTSEngineRegistry
 from core.output.tts.voice_routing import PERSONA_VOICE_MAP
 
-# 🔐 Permissions
-from core.os.permission.consent_store import ConsentStore
-from core.os.permission.permission_registry import PermissionRegistry
-
-
 # =================================================
-# STEP 2 — STATIC NON-EXECUTION RESPONSES
+# STATIC RESPONSES
 # =================================================
 HELP_TEXT = (
     "I can help with system actions, notes, and basic queries.\n"
@@ -79,7 +77,7 @@ class Assistant:
         self.memory_promotion_evaluator = MemoryPromotionEvaluator()
         self.memory_classifier = MemoryClassifier()
 
-        # 🧠 Knowledge Engine (READ-ONLY, BOOTSTRAPPED ONCE)
+        # Knowledge (read-only)
         try:
             self.knowledge = build_knowledge_engine()
         except Exception:
@@ -89,67 +87,91 @@ class Assistant:
         engine_key = PERSONA_VOICE_MAP.get("maahi")
         self.tts_engine = TTSEngineRegistry.get(engine_key) if engine_key else None
 
-        self.consent_store = ConsentStore()
-        self.clarify_index = 0
+        # Last explain surface (for Step 6)
+        self._last_explain: ExplainSurface | None = None
 
     # =================================================
-    # SINGLE RESPONSE GATE (STEP 1)
+    # SINGLE RESPONSE GATE — STEP 5 (CORRECT)
     # =================================================
-    def respond(self, surface: ExplainSurface | str) -> str:
+    def respond(
+        self,
+        *,
+        text: str,
+        explain: ExplainSurface | None = None,
+    ) -> FinalResponseEnvelope:
         """
-        Single authoritative output gate.
-        Step 4 allows ExplainSurface OR raw string.
+        Authoritative output gate.
+        ExplainSurface is stored, not embedded.
         """
-        if isinstance(surface, ExplainSurface):
-            text = surface.as_text()
-        else:
-            text = str(surface)
+        envelope = FinalResponseEnvelope(
+            final_text=text,
+            persona_applied=False,
+            persona_hint=None,
+            persona_fingerprint=None,
+            tts_allowed=True,
+        )
 
-        print(f"Rudra > {text}")
-        return text
+        # Store explain surface for Step 6
+        self._last_explain = explain
+
+        # CLI output
+        print(f"Rudra > {envelope.final_text}")
+
+        return envelope
 
     # =================================================
-    # STEP 2 — NON-EXECUTION HANDLERS
+    # NON-EXECUTION HANDLERS
     # =================================================
     def handle_help(self):
-        return self.respond(ExplainSurface.single(HELP_TEXT))
+        return self.respond(
+            text=HELP_TEXT,
+            explain=ExplainSurface.single(HELP_TEXT),
+        )
 
     def handle_capabilities(self):
-        return self.respond(ExplainSurface.single(CAPABILITIES_TEXT))
+        return self.respond(
+            text=CAPABILITIES_TEXT,
+            explain=ExplainSurface.single(CAPABILITIES_TEXT),
+        )
 
     def handle_identity(self):
-        return self.respond(ExplainSurface.single(IDENTITY_TEXT))
+        return self.respond(
+            text=IDENTITY_TEXT,
+            explain=ExplainSurface.single(IDENTITY_TEXT),
+        )
 
     # =================================================
-    # STEP 3 — KNOWLEDGE HANDLER (DHARMA)
+    # KNOWLEDGE — DHARMA
     # =================================================
     def handle_dharma(self):
         if not self.knowledge:
             return self.respond(
-                ExplainSurface.single(
-                    "Knowledge system is not available right now."
-                )
+                text="Knowledge system is not available right now.",
+                explain=ExplainSurface.single(
+                    "Knowledge engine unavailable."
+                ),
             )
 
-        try:
-            payload = self.knowledge.query("dharma")
-        except Exception:
-            logger.exception("Knowledge engine error")
-            return self.respond(
-                ExplainSurface.single(
-                    "I couldn't retrieve knowledge about dharma right now."
-                )
-            )
+        payload = self.knowledge.query("dharma")
 
         if not payload:
             return self.respond(
-                ExplainSurface.single(
-                    "I don't have enough information about dharma yet."
-                )
+                text="I don't have enough information about dharma yet.",
+                explain=ExplainSurface.single(
+                    "No matching knowledge entry found."
+                ),
             )
 
-        surface = ExplainSurface.from_knowledge(payload)
-        return self.respond(surface)
+        if isinstance(payload, str):
+            return self.respond(
+                text=payload,
+                explain=ExplainSurface.single(payload),
+            )
+
+        return self.respond(
+            text=payload.get("answer", ""),
+            explain=ExplainSurface.from_knowledge(payload),
+        )
 
     # =================================================
     # CORE LOOP
@@ -161,13 +183,15 @@ class Assistant:
 
         validation = self.input_validator.validate(raw_text)
         if not validation["valid"]:
-            self.respond(ExplainSurface.single("Please repeat."))
+            self.respond(
+                text="Please repeat.",
+                explain=ExplainSurface.single("Input validation failed."),
+            )
             return
 
         clean_text = validation["clean_text"]
         lowered = clean_text.lower().strip()
 
-        # STEP 2 — UI COMMANDS
         if lowered in {"help", "commands"}:
             return self.handle_help()
 
@@ -177,7 +201,6 @@ class Assistant:
         if lowered in {"who are you", "what are you"}:
             return self.handle_identity()
 
-        # STEP 3 — KNOWLEDGE
         if lowered in {
             "what is dharma",
             "define dharma",
@@ -186,7 +209,6 @@ class Assistant:
         }:
             return self.handle_dharma()
 
-        # EXECUTION PATH (UNCHANGED)
         tokens = normalize_text(clean_text)
         scores = score_intents(tokens)
         intent, confidence = pick_best_intent(scores, tokens)
@@ -196,23 +218,31 @@ class Assistant:
 
         if confidence < INTENT_CONFIDENCE_THRESHOLD:
             return self.respond(
-                ExplainSurface.single("I’m not sure what you meant.")
+                text="I’m not sure what you meant.",
+                explain=ExplainSurface.single(
+                    "Intent confidence below threshold."
+                ),
             )
 
         save_message("user", clean_text, intent.value)
 
         if intent == Intent.EXIT:
-            self.respond(ExplainSurface.single("Goodbye!"))
+            self.respond(
+                text="Goodbye!",
+                explain=ExplainSurface.single("Session ended."),
+            )
             self.running = False
             return
 
         result = self.action_executor.execute(intent, clean_text, confidence)
-        response = result.get("message", "Done.")
+        message = result.get("message", "Done.")
 
-        surface = ExplainSurface.from_action(response)
-        self.respond(surface)
+        self.respond(
+            text=message,
+            explain=ExplainSurface.from_action(message),
+        )
 
-        save_message("assistant", response, intent.value)
+        save_message("assistant", message, intent.value)
 
     def run(self):
         logger.info("Day 40 — Persona & Voice frozen")
