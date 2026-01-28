@@ -1,6 +1,8 @@
 from core.orchestrator.execution_state import SessionState, StepState
 from core.os.executor.guarded_executor import GuardedExecutor
 from core.control.global_interrupt import InterruptType
+from core.response.final_envelope import FinalResponseEnvelope
+from core.explain.formatter import ExplainFormatter
 
 
 class SessionExecutor:
@@ -12,15 +14,16 @@ class SessionExecutor:
     - Bridge ExecutionSession → GuardedExecutor
     - Respect interrupts, dry-run vs live execution
     - Populate ExplainSurface
+    - STEP 6: Replay ExplainSurface on user request
     """
 
     def __init__(self, session, interrupt_controller):
         self.session = session
         self.interrupt_controller = interrupt_controller
 
-    def execute(self):
+    def execute(self, validated_input=None):
         """
-        Execute the session sequentially.
+        Execute the session sequentially OR replay explain.
 
         HARD RULES:
         - No permission checks here
@@ -29,6 +32,30 @@ class SessionExecutor:
         - No dependency logic (Day 62+)
         """
 
+        # -------------------------------------------------
+        # STEP 6 — Explain request (NO execution)
+        # -------------------------------------------------
+        if validated_input and validated_input.get("is_explain_request"):
+            explain_surface = self.session.get_last_explain_surface()
+
+            if not explain_surface:
+                return FinalResponseEnvelope(
+                    final_text="There is no previous decision to explain.",
+                    persona_metadata=None,
+                    explain_surface=None,
+                )
+
+            formatted = ExplainFormatter.format_for_user(explain_surface)
+
+            return FinalResponseEnvelope(
+                final_text=formatted,
+                persona_metadata=None,
+                explain_surface=explain_surface,
+            )
+
+        # -------------------------------------------------
+        # Normal execution path
+        # -------------------------------------------------
         if self.session.state != SessionState.READY:
             raise RuntimeError(
                 f"Session must be READY, got {self.session.state.name}"
@@ -101,16 +128,11 @@ class SessionExecutor:
         No execution, no mutation beyond this point.
         """
 
-        return {
-            "session_id": self.session.session_id,
-            "state": self.session.state.name,
-            "steps": [
-                {
-                    "step_id": step.step_id,
-                    "state": step.state.name,
-                    "error": step.error,
-                }
-                for step in self.session.steps
-            ],
-            "explain": self.session.explain_surface.render(),
-        }
+        # STEP 6 — Store explain surface ONCE
+        self.session.set_explain_surface(self.session.explain_surface)
+
+        return FinalResponseEnvelope(
+            final_text=None,  # populated upstream (knowledge / actions)
+            persona_metadata=None,
+            explain_surface=self.session.explain_surface,
+        )

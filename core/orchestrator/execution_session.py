@@ -63,6 +63,11 @@ class ExecutionSession:
         # Observation sink (read-only)
         self._observations: List[Tuple[str, str]] = []
 
+        # -----------------------------
+        # STEP 6 — Explain storage (read-only)
+        # -----------------------------
+        self._last_explain_surface = None
+
     # -----------------------------
     # Planning attachment
     # -----------------------------
@@ -123,7 +128,28 @@ class ExecutionSession:
         return list(self._observations)
 
     # -----------------------------
-    # Introspection / Explain
+    # STEP 6 — Explain surface handling
+    # -----------------------------
+
+    def set_explain_surface(self, explain_surface) -> None:
+        """
+        Store the final ExplainSurface for this session.
+
+        Rules:
+        - Stored once per completed decision
+        - Read-only thereafter
+        - No recomputation
+        """
+        self._last_explain_surface = explain_surface
+
+    def get_last_explain_surface(self):
+        """
+        Retrieve the last stored ExplainSurface (if any).
+        """
+        return self._last_explain_surface
+
+    # -----------------------------
+    # Introspection / Explain-safe snapshot
     # -----------------------------
 
     def summary(self) -> dict:
@@ -149,4 +175,5 @@ class ExecutionSession:
                 {"type": kind, "value": value}
                 for kind, value in self._observations
             ],
+            "has_explain_surface": self._last_explain_surface is not None,
         }

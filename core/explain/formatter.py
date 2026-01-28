@@ -34,6 +34,59 @@ def format_section(
 
 
 # =================================================
+# STEP 6 — USER-FACING EXPLAIN FORMATTER (NEW)
+# =================================================
+
+class ExplainFormatter:
+    """
+    Read-only, deterministic formatter for user-requested explanations.
+
+    Rules:
+    - No recomputation
+    - No persona
+    - No preference influence
+    - No persuasion
+    - Plain factual steps only
+    """
+
+    @staticmethod
+    def format_for_user(explain_surface) -> str:
+        if not explain_surface:
+            return "There is no explanation available."
+
+        lines: List[str] = []
+        lines.append("I answered this by:")
+
+        # Prefer structured steps if available
+        steps = getattr(explain_surface, "steps", None)
+        if steps:
+            for step in steps:
+                # Step may be str or structured object
+                if isinstance(step, str):
+                    lines.append(f"- {step}")
+                elif isinstance(step, dict):
+                    text = step.get("description") or step.get("summary")
+                    if text:
+                        lines.append(f"- {text}")
+                else:
+                    lines.append(f"- {str(step)}")
+        else:
+            # Fallback: render surface safely
+            rendered = getattr(explain_surface, "render", None)
+            if callable(rendered):
+                rendered_lines = rendered()
+                for r in rendered_lines:
+                    lines.append(f"- {r}")
+
+        # Optional citation support
+        citation = getattr(explain_surface, "citation", None)
+        if citation:
+            lines.append(f"(Source: {citation})")
+
+        return "\n".join(lines)
+
+
+# =================================================
 # EXISTING TRACE / INFLUENCE FORMATTERS (UNCHANGED)
 # =================================================
 
