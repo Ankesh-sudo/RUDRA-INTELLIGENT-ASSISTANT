@@ -12,6 +12,7 @@ from core.actions.action_executor import ActionExecutor
 
 # 🧠 Explain Surface (STEP 4)
 from core.explain.explain_surface import ExplainSurface
+from core.explain.formatter import ExplainFormatter  # ✅ STEP 6
 
 # 🧠 Response Envelope (STEP 5)
 from core.response.final_envelope import FinalResponseEnvelope
@@ -30,6 +31,7 @@ from core.memory.memory_manager import MemoryManager
 # 🔊 TTS (still disabled)
 from core.output.tts.tts_registry import TTSEngineRegistry
 from core.output.tts.voice_routing import PERSONA_VOICE_MAP
+
 
 # =================================================
 # STATIC RESPONSES
@@ -87,11 +89,11 @@ class Assistant:
         engine_key = PERSONA_VOICE_MAP.get("maahi")
         self.tts_engine = TTSEngineRegistry.get(engine_key) if engine_key else None
 
-        # Last explain surface (for Step 6)
+        # STEP 6 — last explain surface (read-only)
         self._last_explain: ExplainSurface | None = None
 
     # =================================================
-    # SINGLE RESPONSE GATE — STEP 5 (CORRECT)
+    # SINGLE RESPONSE GATE — STEP 5 (LOCKED)
     # =================================================
     def respond(
         self,
@@ -111,7 +113,7 @@ class Assistant:
             tts_allowed=True,
         )
 
-        # Store explain surface for Step 6
+        # STEP 6 — store explain surface
         self._last_explain = explain
 
         # CLI output
@@ -192,6 +194,25 @@ class Assistant:
         clean_text = validation["clean_text"]
         lowered = clean_text.lower().strip()
 
+        # =================================================
+        # STEP 6 — EXPLAIN TOGGLE (META COMMAND)
+        # =================================================
+        if validation.get("is_explain_request"):
+            if not self._last_explain:
+                return self.respond(
+                    text="There is no previous decision to explain.",
+                    explain=None,
+                )
+
+            formatted = ExplainFormatter.format_for_user(self._last_explain)
+            return self.respond(
+                text=formatted,
+                explain=self._last_explain,
+            )
+
+        # -------------------------------------------------
+        # STATIC COMMANDS
+        # -------------------------------------------------
         if lowered in {"help", "commands"}:
             return self.handle_help()
 
@@ -209,6 +230,9 @@ class Assistant:
         }:
             return self.handle_dharma()
 
+        # -------------------------------------------------
+        # INTENT ROUTING
+        # -------------------------------------------------
         tokens = normalize_text(clean_text)
         scores = score_intents(tokens)
         intent, confidence = pick_best_intent(scores, tokens)
