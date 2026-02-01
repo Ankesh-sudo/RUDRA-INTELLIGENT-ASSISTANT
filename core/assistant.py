@@ -272,4 +272,5 @@ class Assistant:
         logger.info("Day 40 — Persona & Voice frozen")
         while self.running:
             self._cycle()
+            
         logger.info("Assistant has stopped.")
